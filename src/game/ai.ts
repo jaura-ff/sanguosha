@@ -2,6 +2,8 @@
 import { canBeSha, canBeShan, distance, inRange } from './engine'
 import type { Action, GameState, Player } from './engine'
 
+export type Difficulty = 'easy' | 'normal' | 'hard'
+
 function enemiesOf(s: GameState, p: Player): Player[] {
   const rebels = s.players.filter((x) => x.alive && x.identity === '反贼')
   if (p.identity === '反贼') {
@@ -11,10 +13,11 @@ function enemiesOf(s: GameState, p: Player): Player[] {
   return rebels
 }
 
-function pickTarget(s: GameState, p: Player, mustInRange: boolean): number | undefined {
+function pickTarget(s: GameState, p: Player, mustInRange: boolean, difficulty: Difficulty): number | undefined {
   let foes = enemiesOf(s, p)
   if (mustInRange) foes = foes.filter((f) => inRange(s, p.id, f.id))
   if (!foes.length) return undefined
+  if (difficulty === 'easy') return foes[Math.floor(Math.random() * foes.length)].id
   foes.sort((a, b) => a.hp - b.hp || a.hand.length - b.hand.length)
   return foes[0].id
 }
@@ -23,7 +26,7 @@ function hasCards(p: Player): boolean {
   return p.hand.length > 0 || Object.keys(p.equip).length > 0 || p.judge.length > 0
 }
 
-export function aiAction(s: GameState): Action | null {
+export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Action | null {
   if (s.winner) return null
 
   // 1. 响应阶段
@@ -35,6 +38,11 @@ export function aiAction(s: GameState): Action | null {
     if (pid === null) return null
     const p = s.players[pid]
     if (p.isHuman) return null
+
+    // 简单难度下 AI 偶尔会错过响应，让新手有更宽松的进攻空间。
+    if (difficulty === 'easy' && Math.random() < 0.3) {
+      return { type: 'respond', pid, cardId: null }
+    }
 
     if (pd.kind === 'shan') {
       const shan = p.hand.find((cd) => canBeShan(p, cd))
@@ -77,6 +85,11 @@ export function aiAction(s: GameState): Action | null {
 
   if (s.phase !== 'play') return null
 
+  // 简单难度下 AI 偶尔会提前收手，但仍会正常完成回合。
+  if (difficulty === 'easy' && Math.random() < 0.22) {
+    return { type: 'endPlay', pid: p.id }
+  }
+
   // 2.1 装备（优先武器，其次防具、马）
   const equipOrder = ['weapon', 'armor', 'minus', 'plus'] as const
   for (const slot of equipOrder) {
@@ -98,8 +111,8 @@ export function aiAction(s: GameState): Action | null {
     if (junk.length >= 2) return { type: 'zhiheng', pid: p.id, cardIds: junk.map((x) => x.id) }
   }
 
-  const rangeTarget = pickTarget(s, p, true)
-  const anyTarget = pickTarget(s, p, false)
+  const rangeTarget = pickTarget(s, p, true, difficulty)
+  const anyTarget = pickTarget(s, p, false, difficulty)
 
   // 2.5 杀（优先真杀，其次闪转化，关羽最后才用武圣转化其他红牌）
   if (rangeTarget !== undefined) {
@@ -119,13 +132,14 @@ export function aiAction(s: GameState): Action | null {
     const t = s.players[anyTarget]
     // 2.6 决斗
     const juedou = p.hand.find((x) => x.name === '决斗')
-    if (juedou && t.hand.length <= p.hand.filter((x) => canBeSha(p, x)).length) {
+    const shaCount = p.hand.filter((x) => canBeSha(p, x)).length
+    if (juedou && (difficulty === 'hard' ? shaCount > 0 && t.hand.length <= shaCount + 1 : t.hand.length <= shaCount)) {
       return { type: 'play', pid: p.id, cardId: juedou.id, targetId: anyTarget }
     }
     // 2.7 AOE
     const foes = enemiesOf(s, p).length
     const aoe = p.hand.find((x) => x.name === '南蛮入侵' || x.name === '万箭齐发')
-    if (aoe && foes >= 2) return { type: 'play', pid: p.id, cardId: aoe.id }
+    if (aoe && foes >= (difficulty === 'hard' ? 1 : 2)) return { type: 'play', pid: p.id, cardId: aoe.id }
     // 2.8 乐不思蜀（对核心敌人）
     const le = p.hand.find((x) => x.name === '乐不思蜀')
     if (le && !t.judge.some((x) => x.name === '乐不思蜀')) {

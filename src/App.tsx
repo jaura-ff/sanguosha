@@ -4,6 +4,7 @@ import {
 } from './game/engine'
 import type { Action, Card, GameState, Player } from './game/engine'
 import { aiAction } from './game/ai'
+import type { Difficulty } from './game/ai'
 import { Button } from '@/components/ui/button'
 
 const IDENTITY_COLOR: Record<string, string> = {
@@ -110,7 +111,32 @@ const IDENTITY_DESC: Record<string, string> = {
   反贼: '获胜条件：杀死主公。反贼同伴被击杀时，击杀者摸 3 张牌。',
 }
 
-function StartScreen({ onStart }: { onStart: () => void }) {
+const DIFFICULTIES: Array<{
+  value: Difficulty
+  name: string
+  label: string
+  description: string
+}> = [
+  { value: 'easy', name: '简单', label: '初识战场', description: 'AI 偶尔失误，适合熟悉卡牌与流程。' },
+  { value: 'normal', name: '普通', label: '势均力敌', description: 'AI 稳定行动，保留原有对局体验。' },
+  { value: 'hard', name: '困难', label: '谋定天下', description: 'AI 更善于集火、留牌与把握进攻时机。' },
+]
+
+const DIFFICULTY_NAMES: Record<Difficulty, string> = {
+  easy: '简单',
+  normal: '普通',
+  hard: '困难',
+}
+
+function StartScreen({
+  difficulty,
+  onDifficultyChange,
+  onStart,
+}: {
+  difficulty: Difficulty
+  onDifficultyChange: (difficulty: Difficulty) => void
+  onStart: () => void
+}) {
   const rules = [
     '每名角色回合开始摸 2 张牌，出牌阶段可使用装备、锦囊与【杀】。',
     '每回合限出 1 张【杀】（张飞、诸葛连弩不受此限）。',
@@ -155,7 +181,37 @@ function StartScreen({ onStart }: { onStart: () => void }) {
             </ul>
           </div>
 
-          <div className="mt-8 flex flex-col items-center gap-3">
+          <fieldset className="mt-6">
+            <legend className="mb-3 text-xs font-bold tracking-widest text-zinc-400">选 择 难 度</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {DIFFICULTIES.map((item) => {
+                const active = difficulty === item.value
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => onDifficultyChange(item.value)}
+                    className={[
+                      'rounded-lg border p-3 text-left transition-all duration-200 active:scale-[0.98]',
+                      'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
+                      active
+                        ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-400/30'
+                        : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/70',
+                    ].join(' ')}
+                  >
+                    <div className={active ? 'text-sm font-bold text-amber-300' : 'text-sm font-bold text-zinc-200'}>
+                      {item.name}
+                    </div>
+                    <div className="mt-1 text-[11px] font-medium text-zinc-400">{item.label}</div>
+                    <div className="mt-2 text-[11px] leading-relaxed text-zinc-500">{item.description}</div>
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
+
+          <div className="mt-6 flex flex-col items-center gap-3">
             <Button
               size="lg"
               className="w-full sm:w-64 text-base font-bold tracking-widest"
@@ -175,6 +231,7 @@ interface HoverTip { x: number; y: number; title: string; lines: string[] }
 
 export default function App() {
   const [started, setStarted] = useState(false)
+  const [difficulty, setDifficulty] = useState<Difficulty>('normal')
   const [state, setState] = useState<GameState>(() => newGame())
   const [hoverTip, setHoverTip] = useState<HoverTip | null>(null)
   const [selected, setSelected] = useState<number[]>([])
@@ -193,12 +250,11 @@ export default function App() {
 
   useEffect(() => {
     if (!started) return
-    const act = aiAction(state)
+    const act = aiAction(state, difficulty)
     if (!act) return
     const t = setTimeout(() => dispatch(act), 900)
     return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, started])
+  }, [state, started, difficulty])
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
@@ -237,7 +293,15 @@ export default function App() {
     setStarted(false)
   }
 
-  if (!started) return <StartScreen onStart={startGame} />
+  if (!started) {
+    return (
+      <StartScreen
+        difficulty={difficulty}
+        onDifficultyChange={setDifficulty}
+        onStart={startGame}
+      />
+    )
+  }
 
   const usableForPending = (card: Card): boolean => {
     if (!myPending) return false
@@ -361,6 +425,9 @@ export default function App() {
           <span>牌堆 {state.deck.length}</span>
           <span>弃牌堆 {state.discardPile.length}</span>
           <span>攻击范围 {attackRange(me)}</span>
+          <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-300">
+            {DIFFICULTY_NAMES[difficulty]}
+          </span>
           {!state.winner && (
             <Button
               size="sm"
