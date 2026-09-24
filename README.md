@@ -1,73 +1,52 @@
-# React + TypeScript + Vite
+# 三国杀 · 网页版
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+一个纯前端的三国杀单机对战游戏，你 + 3 个 AI 进行 4 人身份局对战。
 
-Currently, two official plugins are available:
+**🎮 在线试玩**：https://jaura-ff.github.io/sanguosha/
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 玩法
 
-## React Compiler
+- **身份局**：随机分配主公 / 忠臣 / 反贼×2，主公公开身份，其余隐藏，阵亡时揭晓
+- **回合流程**：摸 2 张牌 → 出牌 → 弃牌至当前体力值
+- **胜负**：主公或忠臣消灭所有反贼即胜；反贼杀死主公即胜
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 内容
 
-## Expanding the ESLint configuration
+### 武将（各带技能）
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+| 武将 | 技能 | 说明 |
+|---|---|---|
+| 关羽 | 武圣 | 可将红色手牌当【杀】使用 |
+| 赵云 | 龙胆 | 【杀】当【闪】、【闪】当【杀】 |
+| 张飞 | 咆哮 | 出【杀】无次数限制 |
+| 黄月英 | 集智 | 使用锦囊牌后摸 1 张 |
+| 曹操 | 奸雄 | 每受 1 点伤害摸 1 张 |
+| 孙权 | 制衡 | 每回合一次，弃任意张牌摸等量牌 |
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### 卡牌
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- **基本牌**：杀 / 闪 / 桃
+- **锦囊牌**：无中生有、决斗、南蛮入侵、万箭齐发、过河拆桥、顺手牵羊、桃园结义、乐不思蜀（延时判定）
+- **装备牌**：诸葛连弩 / 青釭剑 / 青龙偃月刀（武器，扩大攻击范围）、八卦阵（防具，判定当闪）、赤兔（−1 马）、的卢（+1 马）
+- **距离系统**：座位决定距离，武器范围与 ±1 马修正
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 操作
+
+- 点击手牌出牌，需要目标时再点击对手头像
+- 鼠标悬停角色可查看技能与身份说明
+- 关羽可点"武圣"开关，将红色手牌当杀使用
+- 顶栏可随时结束游戏（揭晓身份）或重新开始
+
+## 本地运行
+
+```bash
+npm install
+npm run dev      # 开发预览 http://localhost:3000
+npm run build    # 构建到 dist/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+`dist/index.html` 双击即可离线游玩。
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 技术栈
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+React + TypeScript + Vite + Tailwind CSS，游戏逻辑为纯函数引擎（`src/game/engine.ts`），AI 决策独立模块（`src/game/ai.ts`），部署在 GitHub Pages。
