@@ -289,6 +289,7 @@ export default function App() {
     return null
   })
   const [minimized, setMinimized] = useState(false)
+  const [resizing, setResizing] = useState(false)
   const winRef = useRef<HTMLDivElement>(null)
 
   const clampWith = (p: { x: number; y: number }, size: { w: number; h: number }) => ({
@@ -328,12 +329,17 @@ export default function App() {
     window.addEventListener('pointerup', up)
   }
 
-  // 拖右下角把手改变窗口大小
+  // 拖右下角把手改变窗口大小（按住鼠标左键拖动）
   const startResize = (e: React.PointerEvent) => {
     e.stopPropagation()
     if (e.button !== 0) return
     const el = winRef.current
     if (!el) return
+    const target = e.currentTarget as HTMLElement
+    try { target.setPointerCapture(e.pointerId) } catch { /* ignore */ }
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'nwse-resize'
+    setResizing(true)
     const r = el.getBoundingClientRect()
     const startX = e.clientX
     const startY = e.clientY
@@ -348,6 +354,10 @@ export default function App() {
     const up = () => {
       persist('sgs:winsize', size)
       setWinPos((p) => (p ? clampWith(p, size) : p))
+      setResizing(false)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      try { target.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
     }
@@ -584,6 +594,7 @@ export default function App() {
             ? 'md:absolute md:left-[var(--win-x)] md:top-[var(--win-y)] md:h-[var(--win-h)] md:w-[var(--win-w)] md:rounded-xl md:border md:border-zinc-600/70 md:shadow-[0_24px_70px_rgba(0,0,0,0.75)]'
             : '',
           compact && minimized ? 'md:hidden' : '',
+          resizing ? 'md:ring-2 md:ring-amber-500/40' : '',
         ].join(' ')}
       >
         {/* 小窗标题栏：可拖动，右侧最小化 / 关闭 */}
@@ -594,6 +605,7 @@ export default function App() {
           >
             <span className="text-xs text-zinc-600">≡</span>
             <span className="text-[11px] font-medium text-zinc-300">三国杀 · 网页版</span>
+            <span className="ml-2 hidden text-[10px] text-zinc-600 lg:inline">拖动此处移动 · 拖右下角改大小</span>
             <div className="ml-auto flex items-center gap-1">
               <button
                 type="button"
@@ -796,15 +808,21 @@ export default function App() {
         </aside>
         </div>
         </>)}
-        {/* 右下角把手：拖动改变小窗大小 */}
+        {/* 右下角把手：按住鼠标左键拖动改变窗口大小 */}
         {compact && !minimized && (
           <div
             onPointerDown={startResize}
-            title="拖动改变窗口大小"
-            className="absolute bottom-0 right-0 z-20 hidden h-5 w-5 cursor-nwse-resize items-end justify-end p-1 md:flex"
+            onDoubleClick={() => {
+              const d = { w: 960, h: 680 }
+              setWinSize(d)
+              persist('sgs:winsize', d)
+              setWinPos((p) => (p ? clampWith(p, d) : p))
+            }}
+            title="按住鼠标左键拖动改变大小（双击恢复默认 960×680）"
+            className={`absolute bottom-0 right-0 z-20 hidden h-7 w-7 cursor-nwse-resize items-end justify-end rounded-tl-lg p-1 md:flex ${resizing ? 'bg-amber-500/25' : 'hover:bg-zinc-700/70'}`}
           >
-            <svg viewBox="0 0 10 10" className="h-3 w-3 text-zinc-500">
-              <path d="M9 1 L1 9 M9 5.5 L5.5 9" stroke="currentColor" strokeWidth="1.3" fill="none" />
+            <svg viewBox="0 0 12 12" className={`h-3.5 w-3.5 ${resizing ? 'text-amber-300' : 'text-zinc-400'}`}>
+              <path d="M11 3 L3 11 M11 7.5 L7.5 11" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
             </svg>
           </div>
         )}
