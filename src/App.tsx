@@ -133,6 +133,21 @@ const DIFFICULTY_NAMES: Record<Difficulty, string> = {
   hard: '困难',
 }
 
+// 全局浮动显示模式切换：固定在右上角，主菜单与游戏内都能点，仅桌面端显示
+function DisplayToggle({ compact, onToggle }: { compact: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={compact ? '切换为全屏显示' : '切换为小窗显示（窗口可拖动）'}
+      className="fixed right-3 top-3 z-[60] hidden items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900/90 px-2.5 py-1.5 text-xs text-zinc-300 shadow-lg backdrop-blur transition hover:border-amber-500/60 hover:text-amber-300 md:flex"
+    >
+      <span className="text-[11px] leading-none">{compact ? '■' : '□'}</span>
+      {compact ? '全屏' : '小窗'}
+    </button>
+  )
+}
+
 function StartScreen({
   difficulty,
   onDifficultyChange,
@@ -149,9 +164,8 @@ function StartScreen({
     '体力降到 0 时进入濒死，需自己或他人出【桃】相救。',
   ]
   return (
-    <div className="h-[100dvh] touch-manipulation overflow-y-auto bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 pb-[env(safe-area-inset-bottom)] text-zinc-100">
-      <div className="min-h-full flex items-center justify-center p-4 sm:p-6">
-        <div className="w-full max-w-2xl rounded-2xl border border-zinc-700/70 bg-zinc-900/60 shadow-2xl p-6 sm:p-8 md:p-10">
+    <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4 sm:p-6">
+      <div className="w-full max-w-2xl rounded-2xl border border-zinc-700/70 bg-zinc-900/60 shadow-2xl p-6 sm:p-8 md:p-10">
           <div className="text-center">
             <div className="text-4xl sm:text-5xl font-black tracking-[0.3em] text-amber-400 drop-shadow-[0_0_18px_rgba(251,191,36,0.25)]">
               三国杀
@@ -227,7 +241,6 @@ function StartScreen({
             <div className="text-[11px] text-zinc-500">开局后由你先行动，对手由 AI 自动出牌</div>
           </div>
         </div>
-      </div>
     </div>
   )
 }
@@ -254,6 +267,47 @@ export default function App() {
       return next
     })
   }
+  // 小窗被拖动后的位置（null = 居中显示）
+  const winRef = useRef<HTMLDivElement>(null)
+  const [winPos, setWinPos] = useState<{ x: number; y: number } | null>(null)
+  const startDrag = (e: React.PointerEvent) => {
+    const el = winRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const offX = e.clientX - r.left
+    const offY = e.clientY - r.top
+    if (!winPos) setWinPos({ x: r.left, y: r.top })
+    const move = (ev: PointerEvent) => {
+      setWinPos({
+        x: Math.max(0, Math.min(ev.clientX - offX, window.innerWidth - r.width)),
+        y: Math.max(0, Math.min(ev.clientY - offY, window.innerHeight - r.height)),
+      })
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  // 浏览器窗口变小时，把小窗重新拉回可视范围内
+  useEffect(() => {
+    const clamp = () => {
+      setWinPos((p) => {
+        if (!p) return p
+        const el = winRef.current
+        if (!el) return p
+        const r = el.getBoundingClientRect()
+        return {
+          x: Math.max(0, Math.min(p.x, window.innerWidth - r.width)),
+          y: Math.max(0, Math.min(p.y, window.innerHeight - r.height)),
+        }
+      })
+    }
+    window.addEventListener('resize', clamp)
+    return () => window.removeEventListener('resize', clamp)
+  }, [])
   const logRef = useRef<HTMLDivElement>(null)
   const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -314,15 +368,14 @@ export default function App() {
     setStarted(false)
   }
 
-  if (!started) {
-    return (
-      <StartScreen
-        difficulty={difficulty}
-        onDifficultyChange={setDifficulty}
-        onStart={startGame}
-      />
-    )
-  }
+  // 主菜单与游戏界面共用同一个外层容器，保证「小窗 / 全屏」切换在两个界面都即时生效
+  const startScreen = (
+    <StartScreen
+      difficulty={difficulty}
+      onDifficultyChange={setDifficulty}
+      onStart={startGame}
+    />
+  )
 
   const usableForPending = (card: Card): boolean => {
     if (!myPending) return false
@@ -451,16 +504,32 @@ export default function App() {
   }
 
   return (
-    <div className={`flex min-h-[100dvh] items-center justify-center bg-zinc-950 ${compact ? 'md:p-4' : ''}`}>
-    <div
-      className={[
-        'flex touch-manipulation flex-col overflow-hidden bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 pb-[env(safe-area-inset-bottom)] text-zinc-100',
-        compact
-          ? 'h-[100dvh] w-full md:h-[min(86vh,680px)] md:w-[min(95vw,960px)] md:rounded-2xl md:border md:border-zinc-700/80 md:shadow-2xl'
-          : 'h-[100dvh] w-full',
-      ].join(' ')}
-    >
-      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-zinc-800 px-3 py-2 sm:px-6 sm:py-3">
+    <div className={`relative flex min-h-[100dvh] items-center justify-center bg-zinc-950 ${compact ? 'md:p-4' : ''}`}>
+      <DisplayToggle compact={compact} onToggle={toggleCompact} />
+      <div
+        ref={winRef}
+        style={compact && winPos ? { left: winPos.x, top: winPos.y } : undefined}
+        className={[
+          'flex touch-manipulation flex-col overflow-hidden bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 pb-[env(safe-area-inset-bottom)] text-zinc-100',
+          compact
+            ? 'h-[100dvh] w-full md:h-[min(86vh,680px)] md:w-[min(95vw,960px)] md:rounded-2xl md:border md:border-zinc-700/80 md:shadow-2xl'
+            : 'h-[100dvh] w-full',
+          compact && winPos ? 'md:absolute' : '',
+        ].join(' ')}
+      >
+        {/* 小窗模式下的窗口标题栏，按住可拖动 */}
+        {compact && (
+          <div
+            onPointerDown={startDrag}
+            className="hidden h-8 shrink-0 cursor-move select-none items-center gap-2 border-b border-zinc-800 bg-zinc-900/80 px-3 md:flex"
+          >
+            <span className="text-xs text-zinc-600">≡</span>
+            <span className="text-[11px] text-zinc-500">三国杀 · 网页版</span>
+            <span className="ml-auto text-[11px] text-zinc-600">按住此处拖动窗口</span>
+          </div>
+        )}
+        {!started ? startScreen : (<>
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-zinc-800 px-3 py-2 sm:px-6 sm:py-3 md:pr-24">
         <h1 className="text-base font-bold tracking-widest text-amber-400 sm:text-xl">
           三国杀<span className="hidden sm:inline"> · 网页版</span>
         </h1>
@@ -492,16 +561,6 @@ export default function App() {
           </Button>
           <Button size="sm" variant="ghost" className="hidden px-3 text-sm sm:inline-flex" onClick={backToMenu}>
             返回主菜单
-          </Button>
-          {/* 桌面端显示模式切换：小窗 / 全屏（手机端始终全屏，故隐藏） */}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="hidden px-2 text-xs md:inline-flex sm:px-3 sm:text-sm"
-            onClick={toggleCompact}
-            title={compact ? '切换为全屏显示' : '切换为小窗显示（960×680 居中窗口）'}
-          >
-            {compact ? '全屏' : '小窗'}
           </Button>
         </div>
       </header>
@@ -647,8 +706,9 @@ export default function App() {
             ))}
           </div>
         </aside>
+        </div>
+        </>)}
       </div>
-    </div>
 
       {/* 角色悬浮说明弹框 */}
       {hoverTip && (
