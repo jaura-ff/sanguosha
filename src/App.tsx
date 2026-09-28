@@ -268,22 +268,86 @@ export default function App() {
     })
   }
   // 小窗被拖动后的位置（null = 居中显示）
+  const [winSize, setWinSize] = useState(() => {
+    try {
+      const raw = localStorage.getItem('sgs:winsize')
+      if (raw) {
+        const v = JSON.parse(raw) as { w: number; h: number }
+        if (v.w >= 520 && v.h >= 400) return v
+      }
+    } catch { /* ignore */ }
+    return { w: 960, h: 680 }
+  })
+  const [winPos, setWinPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem('sgs:winpos')
+      if (raw) {
+        const v = JSON.parse(raw) as { x: number; y: number }
+        if (typeof v.x === 'number' && typeof v.y === 'number') return v
+      }
+    } catch { /* ignore */ }
+    return null
+  })
+  const [minimized, setMinimized] = useState(false)
   const winRef = useRef<HTMLDivElement>(null)
-  const [winPos, setWinPos] = useState<{ x: number; y: number } | null>(null)
+
+  const clampWith = (p: { x: number; y: number }, size: { w: number; h: number }) => ({
+    x: Math.max(0, Math.min(p.x, Math.max(0, window.innerWidth - size.w - 8))),
+    y: Math.max(0, Math.min(p.y, Math.max(0, window.innerHeight - size.h - 8))),
+  })
+  const persist = (key: string, value: unknown) => {
+    try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* 隐私模式下忽略 */ }
+  }
+
+  // 首次进入小窗时按当前尺寸居中显示
+  useEffect(() => {
+    if (!compact || winPos) return
+    setWinPos(clampWith({ x: (window.innerWidth - winSize.w) / 2, y: Math.max(8, (window.innerHeight - winSize.h) / 2) }, winSize))
+  }, [compact, winPos, winSize])
+
+  // 拖动标题栏移动窗口
   const startDrag = (e: React.PointerEvent) => {
+    if (e.button !== 0) return
     const el = winRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
     const offX = e.clientX - r.left
     const offY = e.clientY - r.top
-    if (!winPos) setWinPos({ x: r.left, y: r.top })
+    let last = { x: r.left, y: r.top }
+    setWinPos(last)
     const move = (ev: PointerEvent) => {
-      setWinPos({
-        x: Math.max(0, Math.min(ev.clientX - offX, window.innerWidth - r.width)),
-        y: Math.max(0, Math.min(ev.clientY - offY, window.innerHeight - r.height)),
-      })
+      last = clampWith({ x: ev.clientX - offX, y: ev.clientY - offY }, winSize)
+      setWinPos(last)
     }
     const up = () => {
+      persist('sgs:winpos', last)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  // 拖右下角把手改变窗口大小
+  const startResize = (e: React.PointerEvent) => {
+    e.stopPropagation()
+    if (e.button !== 0) return
+    const el = winRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const startX = e.clientX
+    const startY = e.clientY
+    let size = { w: r.width, h: r.height }
+    const move = (ev: PointerEvent) => {
+      size = {
+        w: Math.round(Math.max(520, Math.min(r.width + ev.clientX - startX, window.innerWidth - r.left - 8))),
+        h: Math.round(Math.max(400, Math.min(r.height + ev.clientY - startY, window.innerHeight - r.top - 8))),
+      }
+      setWinSize(size)
+    }
+    const up = () => {
+      persist('sgs:winsize', size)
+      setWinPos((p) => (p ? clampWith(p, size) : p))
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
     }
@@ -293,21 +357,10 @@ export default function App() {
 
   // 浏览器窗口变小时，把小窗重新拉回可视范围内
   useEffect(() => {
-    const clamp = () => {
-      setWinPos((p) => {
-        if (!p) return p
-        const el = winRef.current
-        if (!el) return p
-        const r = el.getBoundingClientRect()
-        return {
-          x: Math.max(0, Math.min(p.x, window.innerWidth - r.width)),
-          y: Math.max(0, Math.min(p.y, window.innerHeight - r.height)),
-        }
-      })
-    }
+    const clamp = () => setWinPos((p) => (p ? clampWith(p, winSize) : p))
     window.addEventListener('resize', clamp)
     return () => window.removeEventListener('resize', clamp)
-  }, [])
+  }, [winSize])
   const logRef = useRef<HTMLDivElement>(null)
   const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -504,28 +557,63 @@ export default function App() {
   }
 
   return (
-    <div className={`relative flex min-h-[100dvh] items-center justify-center bg-zinc-950 ${compact ? 'md:p-4' : ''}`}>
+    <div className="relative flex min-h-[100dvh] items-center justify-center bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950">
       <DisplayToggle compact={compact} onToggle={toggleCompact} />
+      {compact && minimized && (
+        <button
+          type="button"
+          onClick={() => setMinimized(false)}
+          className="fixed bottom-4 right-4 z-[60] hidden items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/95 px-3 py-2 text-xs text-zinc-200 shadow-xl hover:border-amber-500/60 md:flex"
+        >
+          <span className="font-bold text-amber-400">三国杀 · 网页版</span>
+          <span className="text-zinc-400">已最小化，点击恢复</span>
+        </button>
+      )}
       <div
         ref={winRef}
-        style={compact && winPos ? { left: winPos.x, top: winPos.y } : undefined}
+        style={{
+          '--win-w': `${winSize.w}px`,
+          '--win-h': `${winSize.h}px`,
+          '--win-x': `${winPos?.x ?? 0}px`,
+          '--win-y': `${winPos?.y ?? 0}px`,
+        } as React.CSSProperties}
         className={[
-          'flex touch-manipulation flex-col overflow-hidden bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 pb-[env(safe-area-inset-bottom)] text-zinc-100',
+          'relative flex touch-manipulation flex-col overflow-hidden bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 pb-[env(safe-area-inset-bottom)] text-zinc-100',
+          'h-[100dvh] w-full',
           compact
-            ? 'h-[100dvh] w-full md:h-[min(86vh,680px)] md:w-[min(95vw,960px)] md:rounded-2xl md:border md:border-zinc-700/80 md:shadow-2xl'
-            : 'h-[100dvh] w-full',
-          compact && winPos ? 'md:absolute' : '',
+            ? 'md:absolute md:left-[var(--win-x)] md:top-[var(--win-y)] md:h-[var(--win-h)] md:w-[var(--win-w)] md:rounded-xl md:border md:border-zinc-600/70 md:shadow-[0_24px_70px_rgba(0,0,0,0.75)]'
+            : '',
+          compact && minimized ? 'md:hidden' : '',
         ].join(' ')}
       >
-        {/* 小窗模式下的窗口标题栏，按住可拖动 */}
+        {/* 小窗标题栏：可拖动，右侧最小化 / 关闭 */}
         {compact && (
           <div
             onPointerDown={startDrag}
-            className="hidden h-8 shrink-0 cursor-move select-none items-center gap-2 border-b border-zinc-800 bg-zinc-900/80 px-3 md:flex"
+            className="hidden h-9 shrink-0 cursor-move select-none items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-3 md:flex"
           >
             <span className="text-xs text-zinc-600">≡</span>
-            <span className="text-[11px] text-zinc-500">三国杀 · 网页版</span>
-            <span className="ml-auto text-[11px] text-zinc-600">按住此处拖动窗口</span>
+            <span className="text-[11px] font-medium text-zinc-300">三国杀 · 网页版</span>
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                title="最小化"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => setMinimized(true)}
+                className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 transition hover:bg-zinc-700 hover:text-zinc-100"
+              >
+                ─
+              </button>
+              <button
+                type="button"
+                title="关闭小窗，恢复全屏"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={toggleCompact}
+                className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 transition hover:bg-rose-600/80 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         )}
         {!started ? startScreen : (<>
@@ -708,6 +796,18 @@ export default function App() {
         </aside>
         </div>
         </>)}
+        {/* 右下角把手：拖动改变小窗大小 */}
+        {compact && !minimized && (
+          <div
+            onPointerDown={startResize}
+            title="拖动改变窗口大小"
+            className="absolute bottom-0 right-0 z-20 hidden h-5 w-5 cursor-nwse-resize items-end justify-end p-1 md:flex"
+          >
+            <svg viewBox="0 0 10 10" className="h-3 w-3 text-zinc-500">
+              <path d="M9 1 L1 9 M9 5.5 L5.5 9" stroke="currentColor" strokeWidth="1.3" fill="none" />
+            </svg>
+          </div>
+        )}
       </div>
 
       {/* 角色悬浮说明弹框 */}
