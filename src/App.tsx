@@ -22,7 +22,7 @@ function CardView({
       title={card.name}
       className={[
         'relative rounded-md border shadow-sm font-bold transition-all select-none',
-        small ? 'w-12 h-16 text-xs' : 'w-16 h-24 text-sm',
+        small ? 'w-10 h-14 text-[10px]' : 'w-12 h-[4.5rem] text-[11px] sm:w-16 sm:h-24 sm:text-sm',
         card.color === 'red' ? 'text-rose-600' : 'text-zinc-900',
         card.kind === 'equip'
           ? 'bg-gradient-to-b from-emerald-50 to-emerald-100 border-emerald-400'
@@ -57,12 +57,14 @@ function EquipRow({ p }: { p: Player }) {
 }
 
 function PlayerPanel({
-  s, p, targetable, dimmed, onClick, onHover, onLeave,
+  s, p, targetable, dimmed, onClick, onHover, onTap, onLeave, className,
 }: {
   s: GameState; p: Player; targetable?: boolean; dimmed?: boolean
   onClick?: () => void
   onHover?: (e: React.MouseEvent, p: Player) => void
+  onTap?: (e: React.PointerEvent, p: Player) => void
   onLeave?: () => void
+  className?: string
 }) {
   const identityShown = p.identityRevealed || p.isHuman || s.phase === 'gameover'
   const me = s.players[0]
@@ -73,30 +75,33 @@ function PlayerPanel({
       disabled={!onClick}
       onMouseMove={onHover ? (e) => onHover(e, p) : undefined}
       onMouseLeave={onLeave}
+      onPointerDown={onTap ? (e) => onTap(e, p) : undefined}
       className={[
-        'w-44 rounded-xl border p-3 text-left transition-all',
+        className || 'w-24 shrink-0',
+        'rounded-lg border p-2 text-left transition-all',
+        'sm:w-44 sm:rounded-xl sm:p-3',
         p.alive ? 'bg-zinc-800/90 border-zinc-600' : 'bg-zinc-900/60 border-zinc-800 opacity-50',
         targetable ? 'ring-2 ring-rose-500 scale-105 cursor-pointer' : '',
         dimmed ? 'opacity-40' : '',
         s.current === p.id && p.alive ? 'border-amber-400' : '',
       ].join(' ')}
     >
-      <div className="flex items-center justify-between">
-        <span className="font-bold text-amber-100">{p.general.name}</span>
+      <div className="flex items-center justify-between gap-1">
+        <span className="truncate text-sm font-bold text-amber-100 sm:text-base">{p.general.name}</span>
         {identityShown && (
-          <span className={`text-[10px] px-1.5 py-0.5 rounded text-white ${IDENTITY_COLOR[p.identity]}`}>
+          <span className={`shrink-0 rounded px-1 py-0.5 text-[9px] text-white sm:px-1.5 sm:text-[10px] ${IDENTITY_COLOR[p.identity]}`}>
             {p.identity}
           </span>
         )}
       </div>
-      <div className="text-[10px] text-zinc-400 mt-0.5" title={p.general.skillDesc}>【{p.general.skill}】</div>
-      <div className="mt-1 text-rose-400 text-sm tracking-tight">
+      <div className="mt-0.5 truncate text-[10px] text-zinc-400" title={p.general.skillDesc}>【{p.general.skill}】</div>
+      <div className="mt-1 text-xs tracking-tight text-rose-400 sm:text-sm">
         {'♥'.repeat(Math.max(p.hp, 0))}
         <span className="text-zinc-600">{'♥'.repeat(Math.max(p.general.maxHp - p.hp, 0))}</span>
       </div>
-      <div className="mt-1 text-xs text-zinc-300 flex justify-between">
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 text-[10px] text-zinc-300 sm:text-xs">
         <span>手牌 {p.hand.length}</span>
-        {dist !== null && <span className="text-sky-300">距离 {dist}</span>}
+        {dist !== null && <span className="hidden text-sky-300 sm:inline">距离 {dist}</span>}
         {!p.alive && <span className="text-zinc-500">已阵亡</span>}
         {s.current === p.id && p.alive && <span className="text-amber-400">行动中</span>}
       </div>
@@ -144,9 +149,9 @@ function StartScreen({
     '体力降到 0 时进入濒死，需自己或他人出【桃】相救。',
   ]
   return (
-    <div className="h-screen overflow-y-auto bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100">
-      <div className="min-h-full flex items-center justify-center p-6">
-        <div className="w-full max-w-2xl rounded-2xl border border-zinc-700/70 bg-zinc-900/60 shadow-2xl p-8 sm:p-10">
+    <div className="h-[100dvh] touch-manipulation overflow-y-auto bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 pb-[env(safe-area-inset-bottom)] text-zinc-100">
+      <div className="min-h-full flex items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-2xl rounded-2xl border border-zinc-700/70 bg-zinc-900/60 shadow-2xl p-6 sm:p-8 md:p-10">
           <div className="text-center">
             <div className="text-4xl sm:text-5xl font-black tracking-[0.3em] text-amber-400 drop-shadow-[0_0_18px_rgba(251,191,36,0.25)]">
               三国杀
@@ -239,6 +244,9 @@ export default function App() {
   const [hint, setHint] = useState('')
   const [wusheng, setWusheng] = useState(false) // 关羽：红牌当杀模式
   const logRef = useRef<HTMLDivElement>(null)
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => { if (tipTimer.current) clearTimeout(tipTimer.current) }, [])
 
   const dispatch = (a: Action) => {
     setState((prev) => apply(prev, a))
@@ -246,6 +254,8 @@ export default function App() {
     setAwaitingTarget(null)
     setHint('')
     setWusheng(false)
+    if (tipTimer.current) clearTimeout(tipTimer.current)
+    setHoverTip(null)
   }
 
   useEffect(() => {
@@ -404,7 +414,7 @@ export default function App() {
   const awaitingCard = awaitingTarget !== null ? me.hand.find((c) => c.id === awaitingTarget) : null
   const canBagua = myPending?.kind === 'shan' && me.equip.armor?.name === '八卦阵'
 
-  const onPanelHover = (e: React.MouseEvent, p: Player) => {
+  const showTip = (cx: number, cy: number, p: Player, autoHide: boolean) => {
     const identityShown = p.identityRevealed || p.isHuman || state.phase === 'gameover'
     const lines = [
       `技能【${p.general.skill}】：${p.general.skillDesc}`,
@@ -412,47 +422,64 @@ export default function App() {
     ]
     if (identityShown) lines.push(`身份【${p.identity}】：${IDENTITY_DESC[p.identity]}`)
     else lines.push('身份：未知（阵亡后揭晓）')
-    const x = Math.min(e.clientX + 14, window.innerWidth - 280)
-    const y = Math.min(e.clientY + 14, window.innerHeight - 140)
+    // 弹框宽度随视口收敛，保证窄屏不会溢出屏幕右侧
+    const tipW = Math.min(256, window.innerWidth * 0.72)
+    const x = Math.max(8, Math.min(cx + 12, window.innerWidth - tipW - 8))
+    const y = Math.max(8, Math.min(cy + 12, window.innerHeight - 130))
+    if (tipTimer.current) clearTimeout(tipTimer.current)
     setHoverTip({ x, y, title: p.general.name, lines })
+    if (autoHide) tipTimer.current = setTimeout(() => setHoverTip(null), 2600)
+  }
+
+  const onPanelHover = (e: React.MouseEvent, p: Player) => showTip(e.clientX, e.clientY, p, false)
+
+  // 触屏没有 hover，改为轻点角色弹出说明，2.6 秒后自动收起
+  const onPanelTap = (e: React.PointerEvent, p: Player) => {
+    if (e.pointerType === 'mouse') return
+    showTip(e.clientX, e.clientY, p, true)
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100 flex flex-col">
-      <header className="flex items-center justify-between px-6 py-3 border-b border-zinc-800">
-        <h1 className="text-xl font-bold text-amber-400 tracking-widest">三国杀 · 网页版</h1>
-        <div className="flex items-center gap-4 text-sm text-zinc-400">
+    <div className="flex h-[100dvh] touch-manipulation flex-col overflow-hidden bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 pb-[env(safe-area-inset-bottom)] text-zinc-100">
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-zinc-800 px-3 py-2 sm:px-6 sm:py-3">
+        <h1 className="text-base font-bold tracking-widest text-amber-400 sm:text-xl">
+          三国杀<span className="hidden sm:inline"> · 网页版</span>
+        </h1>
+        <div className="flex items-center gap-2 text-xs text-zinc-400 sm:gap-4 sm:text-sm">
           <span>牌堆 {state.deck.length}</span>
           <span>弃牌堆 {state.discardPile.length}</span>
-          <span>攻击范围 {attackRange(me)}</span>
-          <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-300">
+          <span className="hidden sm:inline">攻击范围 {attackRange(me)}</span>
+          <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300 sm:px-2 sm:text-sm">
             {DIFFICULTY_NAMES[difficulty]}
           </span>
           {!state.winner && (
             <Button
               size="sm"
               variant="destructive"
+              className="px-2 text-xs sm:px-3 sm:text-sm"
               onClick={() => {
                 if (window.confirm('确定要结束本局游戏吗？将揭晓所有身份。')) {
                   dispatch({ type: 'quit' })
                 }
               }}
             >
-              结束游戏
+              结束
+              <span className="hidden sm:inline">游戏</span>
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={startGame}>
-            重新开始
+          <Button size="sm" variant="outline" className="px-2 text-xs sm:px-3 sm:text-sm" onClick={startGame}>
+            重开
+            <span className="hidden sm:inline">开始</span>
           </Button>
-          <Button size="sm" variant="ghost" onClick={backToMenu}>
+          <Button size="sm" variant="ghost" className="hidden px-3 text-sm sm:inline-flex" onClick={backToMenu}>
             返回主菜单
           </Button>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden min-h-0">
-        <main className="flex-1 flex flex-col items-center justify-between p-4 gap-3 overflow-hidden min-h-0">
-          <div className="flex gap-4 shrink-0">
+      <div className="flex flex-1 flex-col overflow-hidden min-h-0 md:flex-row">
+        <main className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto p-2 md:overflow-hidden sm:gap-3 sm:p-4">
+          <div className="flex w-full shrink-0 justify-center gap-2 sm:gap-4">
             {state.players.slice(1).map((p) => (
               <PlayerPanel
                 key={p.id}
@@ -462,18 +489,19 @@ export default function App() {
                 dimmed={awaitingTarget !== null && !targetable(p) && p.alive}
                 onClick={() => onTargetClick(p.id)}
                 onHover={onPanelHover}
+                onTap={onPanelTap}
                 onLeave={() => setHoverTip(null)}
               />
             ))}
           </div>
 
-          <div className="w-full max-w-2xl min-h-24 rounded-xl border border-zinc-700 bg-zinc-900/70 flex flex-col items-center justify-center p-4 text-center gap-2">
+          <div className="flex w-full max-w-2xl min-h-20 flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 text-center sm:min-h-24 sm:p-4">
             {state.winner ? (
               <>
-                <div className="text-2xl font-bold text-amber-400">
+                <div className="text-xl font-bold text-amber-400 sm:text-2xl">
                   {state.winner === '主公方' ? '🏆 主公方获胜！' : state.winner === '反贼' ? '🗡️ 反贼获胜！' : '🏁 本局已结束'}
                 </div>
-                <div className="text-sm text-zinc-400">
+                <div className="text-xs text-zinc-400 sm:text-sm">
                   {state.players.map((p) => `${p.general.name}·${p.identity}`).join('　')}
                 </div>
                 <div className="flex gap-2 pt-1">
@@ -487,7 +515,7 @@ export default function App() {
               </>
             ) : myPending ? (
               <>
-                <div className="text-lg text-rose-300">{pendingText()}</div>
+                <div className="text-base text-rose-300 sm:text-lg">{pendingText()}</div>
                 <div className="flex gap-2">
                   {canBagua && (
                     <Button size="sm" variant="outline" onClick={() => dispatch({ type: 'bagua', pid: 0 })}>
@@ -501,11 +529,11 @@ export default function App() {
               </>
             ) : awaitingCard ? (
               <>
-                <div className="text-lg text-amber-200">使用【{awaitingCard.name}】，请选择目标</div>
+                <div className="text-base text-amber-200 sm:text-lg">使用【{awaitingCard.name}】，请选择目标</div>
                 <Button variant="secondary" size="sm" onClick={() => { setAwaitingTarget(null); setHint('') }}>取消</Button>
               </>
             ) : discarding ? (
-              <div className="text-lg text-amber-200">
+              <div className="text-base text-amber-200 sm:text-lg">
                 弃牌阶段：请选择 {needDiscard} 张牌弃置（已选 {selected.length}）
               </div>
             ) : myTurn ? (
@@ -522,10 +550,17 @@ export default function App() {
           </div>
 
           <div className="w-full max-w-3xl shrink-0">
-            <div className="flex items-end gap-4">
-              <PlayerPanel s={state} p={me} onHover={onPanelHover} onLeave={() => setHoverTip(null)} />
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end sm:gap-4">
+              <PlayerPanel
+                s={state}
+                p={me}
+                className="w-full shrink-0 sm:w-44"
+                onHover={onPanelHover}
+                onTap={onPanelTap}
+                onLeave={() => setHoverTip(null)}
+              />
               <div className="flex-1">
-                <div className="flex flex-wrap gap-1.5 justify-center min-h-24 max-h-40 overflow-y-auto py-1">
+                <div className="flex flex-wrap justify-center gap-1 py-1 min-h-20 max-h-28 overflow-y-auto sm:gap-1.5 sm:min-h-24 sm:max-h-40">
                   {me.hand.map((card) => {
                     const blocked = myTurn && !myPending ? playBlockReason(card) !== null : false
                     const pendingDisabled = myPending ? !usableForPending(card) : false
@@ -540,7 +575,7 @@ export default function App() {
                     )
                   })}
                 </div>
-                <div className="flex justify-center gap-2 mt-2">
+                <div className="flex flex-wrap justify-center gap-1.5 mt-2 sm:gap-2">
                   {myTurn && (
                     <>
                       <Button size="sm" onClick={() => dispatch({ type: 'endPlay', pid: 0 })}>结束出牌</Button>
@@ -575,9 +610,9 @@ export default function App() {
           </div>
         </main>
 
-        <aside className="w-72 border-l border-zinc-800 flex flex-col">
-          <div className="px-3 py-2 text-sm font-bold text-zinc-300 border-b border-zinc-800">战报</div>
-          <div ref={logRef} className="flex-1 overflow-y-auto p-3 space-y-1 text-xs text-zinc-400">
+        <aside className="flex h-24 shrink-0 flex-col border-t border-zinc-800 sm:h-28 md:h-auto md:w-72 md:shrink md:border-l md:border-t-0">
+          <div className="border-b border-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-300 sm:text-sm">战报</div>
+          <div ref={logRef} className="flex-1 space-y-1 overflow-y-auto p-2 text-[11px] text-zinc-400 sm:p-3 sm:text-xs">
             {state.log.map((line, i) => (
               <div key={i} className={i === state.log.length - 1 ? 'text-amber-200' : ''}>{line}</div>
             ))}
@@ -588,7 +623,7 @@ export default function App() {
       {/* 角色悬浮说明弹框 */}
       {hoverTip && (
         <div
-          className="fixed z-50 w-64 rounded-lg border border-amber-600/50 bg-zinc-900/95 shadow-xl p-3 pointer-events-none"
+          className="pointer-events-none fixed z-50 w-56 max-w-[72vw] rounded-lg border border-amber-600/50 bg-zinc-900/95 p-2.5 shadow-xl sm:w-64 sm:p-3"
           style={{ left: hoverTip.x, top: hoverTip.y }}
         >
           <div className="font-bold text-amber-300 text-sm mb-1">{hoverTip.title}</div>
