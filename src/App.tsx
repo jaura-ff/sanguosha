@@ -243,6 +243,17 @@ export default function App() {
   const [awaitingTarget, setAwaitingTarget] = useState<number | null>(null)
   const [hint, setHint] = useState('')
   const [wusheng, setWusheng] = useState(false) // 关羽：红牌当杀模式
+  // 桌面端「小窗 / 全屏」显示模式，仅 md 以上生效，选择会被记住
+  const [compact, setCompact] = useState(() => {
+    try { return localStorage.getItem('sgs:compact') === '1' } catch { return false }
+  })
+  const toggleCompact = () => {
+    setCompact((v) => {
+      const next = !v
+      try { localStorage.setItem('sgs:compact', next ? '1' : '0') } catch { /* 隐私模式下忽略 */ }
+      return next
+    })
+  }
   const logRef = useRef<HTMLDivElement>(null)
   const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -440,7 +451,15 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-[100dvh] touch-manipulation flex-col overflow-hidden bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 pb-[env(safe-area-inset-bottom)] text-zinc-100">
+    <div className={`flex min-h-[100dvh] items-center justify-center bg-zinc-950 ${compact ? 'md:p-4' : ''}`}>
+    <div
+      className={[
+        'flex touch-manipulation flex-col overflow-hidden bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 pb-[env(safe-area-inset-bottom)] text-zinc-100',
+        compact
+          ? 'h-[100dvh] w-full md:h-[min(86vh,680px)] md:w-[min(95vw,960px)] md:rounded-2xl md:border md:border-zinc-700/80 md:shadow-2xl'
+          : 'h-[100dvh] w-full',
+      ].join(' ')}
+    >
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-zinc-800 px-3 py-2 sm:px-6 sm:py-3">
         <h1 className="text-base font-bold tracking-widest text-amber-400 sm:text-xl">
           三国杀<span className="hidden sm:inline"> · 网页版</span>
@@ -474,11 +493,21 @@ export default function App() {
           <Button size="sm" variant="ghost" className="hidden px-3 text-sm sm:inline-flex" onClick={backToMenu}>
             返回主菜单
           </Button>
+          {/* 桌面端显示模式切换：小窗 / 全屏（手机端始终全屏，故隐藏） */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="hidden px-2 text-xs md:inline-flex sm:px-3 sm:text-sm"
+            onClick={toggleCompact}
+            title={compact ? '切换为全屏显示' : '切换为小窗显示（960×680 居中窗口）'}
+          >
+            {compact ? '全屏' : '小窗'}
+          </Button>
         </div>
       </header>
 
       <div className="flex flex-1 flex-col overflow-hidden min-h-0 md:flex-row">
-        <main className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto p-2 md:overflow-hidden sm:gap-3 sm:p-4">
+        <main className={`flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto p-2 sm:gap-3 sm:p-4 ${compact ? '' : 'md:overflow-hidden'}`}>
           <div className="flex w-full shrink-0 justify-center gap-2 sm:gap-4">
             {state.players.slice(1).map((p) => (
               <PlayerPanel
@@ -619,6 +648,7 @@ export default function App() {
           </div>
         </aside>
       </div>
+    </div>
 
       {/* 角色悬浮说明弹框 */}
       {hoverTip && (
