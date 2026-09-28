@@ -77,9 +77,9 @@ function PlayerPanel({
       onMouseLeave={onLeave}
       onPointerDown={onTap ? (e) => onTap(e, p) : undefined}
       className={[
-        className || 'w-24 shrink-0',
+        className || 'w-24 shrink-0 sm:w-44',
         'rounded-lg border p-2 text-left transition-all',
-        'sm:w-44 sm:rounded-xl sm:p-3',
+        'sm:rounded-xl sm:p-3',
         p.alive ? 'bg-zinc-800/90 border-zinc-600' : 'bg-zinc-900/60 border-zinc-800 opacity-50',
         targetable ? 'ring-2 ring-rose-500 scale-105 cursor-pointer' : '',
         dimmed ? 'opacity-40' : '',
@@ -431,6 +431,26 @@ export default function App() {
     setStarted(false)
   }
 
+  // 四个玩家按「上 / 左 / 右 / 下（自己）」四个方位摆放
+  const seatPanel = (id: number, extra: string) => {
+    const p = state.players[id]
+    if (!p) return null
+    return (
+      <PlayerPanel
+        key={id}
+        s={state}
+        p={p}
+        className={`w-full min-w-0 ${extra}`}
+        targetable={targetable(p)}
+        dimmed={awaitingTarget !== null && !targetable(p) && p.alive}
+        onClick={() => onTargetClick(p.id)}
+        onHover={onPanelHover}
+        onTap={onPanelTap}
+        onLeave={() => setHoverTip(null)}
+      />
+    )
+  }
+
   // 主菜单与游戏界面共用同一个外层容器，保证「小窗 / 全屏」切换在两个界面都即时生效
   const startScreen = (
     <StartScreen
@@ -666,24 +686,16 @@ export default function App() {
       </header>
 
       <div className="flex flex-1 flex-col overflow-hidden min-h-0 md:flex-row">
-        <main className={`flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto p-2 sm:gap-3 sm:p-4 ${compact ? '' : 'md:overflow-hidden'}`}>
-          <div className="flex w-full shrink-0 justify-center gap-2 sm:gap-4">
-            {state.players.slice(1).map((p) => (
-              <PlayerPanel
-                key={p.id}
-                s={state}
-                p={p}
-                targetable={targetable(p)}
-                dimmed={awaitingTarget !== null && !targetable(p) && p.alive}
-                onClick={() => onTargetClick(p.id)}
-                onHover={onPanelHover}
-                onTap={onPanelTap}
-                onLeave={() => setHoverTip(null)}
-              />
-            ))}
-          </div>
+        <main className={`grid min-h-0 flex-1 grid-cols-3 content-start gap-2 overflow-y-auto p-2 sm:gap-3 sm:p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)] md:grid-rows-[auto_minmax(0,1fr)_auto] md:content-stretch ${compact ? '' : 'md:overflow-hidden'}`}>
+          {/* 左：1 号位 */}
+          {seatPanel(1, 'md:col-start-1 md:row-start-2 md:self-center')}
+          {/* 上：2 号位（对家） */}
+          {seatPanel(2, 'md:col-start-2 md:row-start-1 md:justify-self-center md:max-w-[240px]')}
+          {/* 右：3 号位 */}
+          {seatPanel(3, 'md:col-start-3 md:row-start-2 md:self-center')}
 
-          <div className="flex w-full max-w-2xl min-h-20 flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 text-center sm:min-h-24 sm:p-4">
+          {/* 中央：出牌提示 / 战况 */}
+          <div className="col-span-3 row-start-2 flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 text-center sm:min-h-24 sm:p-4 md:col-span-1 md:col-start-2 md:row-start-2 md:min-h-0 md:h-fit md:self-center md:py-6">
             {state.winner ? (
               <>
                 <div className="text-xl font-bold text-amber-400 sm:text-2xl">
@@ -737,7 +749,8 @@ export default function App() {
             )}
           </div>
 
-          <div className="w-full max-w-3xl shrink-0">
+          {/* 下：自己 + 手牌 */}
+          <div className="col-span-3 row-start-3 w-full max-w-3xl justify-self-center">
             <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end sm:gap-4">
               <PlayerPanel
                 s={state}
