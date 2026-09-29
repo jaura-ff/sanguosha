@@ -263,11 +263,16 @@ function die(s: GameState, target: number) {
 
 // ---------- 新游戏 ----------
 
-export function newGame(): GameState {
+export function newGame(opts?: { humanGeneral?: General | null }): GameState {
   const generals = [...GENERALS]
   for (let i = generals.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[generals[i], generals[j]] = [generals[j], generals[i]]
+  }
+  // 玩家固定选将：把所选武将换到 0 号位（玩家），其余 AI 随机分配
+  if (opts?.humanGeneral) {
+    const idx = generals.findIndex((g) => g.name === opts.humanGeneral!.name)
+    if (idx >= 0) [generals[0], generals[idx]] = [generals[idx], generals[0]]
   }
   const identities: Identity[] = ['主公', '忠臣', '反贼', '反贼']
   for (let i = identities.length - 1; i > 0; i--) {

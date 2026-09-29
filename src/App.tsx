@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  apply, attackRange, canBeSha, canBeShan, distance, inRange, newGame, pname,
+  apply, attackRange, canBeSha, canBeShan, distance, inRange, newGame, pname, GENERALS,
 } from './game/engine'
-import type { Action, Card, GameState, Player } from './game/engine'
+import type { Action, Card, GameState, General, Player } from './game/engine'
 import { aiAction } from './game/ai'
 import type { Difficulty } from './game/ai'
 import { Button } from '@/components/ui/button'
@@ -161,11 +161,15 @@ function StartScreen({
   onDifficultyChange,
   onStart,
   onOpenLibrary,
+  general,
+  onGeneralChange,
 }: {
   difficulty: Difficulty
   onDifficultyChange: (difficulty: Difficulty) => void
   onStart: () => void
   onOpenLibrary: () => void
+  general: General | null
+  onGeneralChange: (general: General | null) => void
 }) {
   const rules = [
     '每名角色回合开始摸 2 张牌，出牌阶段可使用装备、锦囊与【杀】。',
@@ -240,6 +244,54 @@ function StartScreen({
             </div>
           </fieldset>
 
+          <fieldset className="mt-6">
+            <legend className="mb-3 text-xs font-bold tracking-widest text-zinc-400">选 择 武 将</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                aria-pressed={general === null}
+                onClick={() => onGeneralChange(null)}
+                className={[
+                  'rounded-lg border p-3 text-left transition-all duration-200 active:scale-[0.98]',
+                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
+                  general === null
+                    ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-400/30'
+                    : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/70',
+                ].join(' ')}
+              >
+                <div className={general === null ? 'text-sm font-bold text-amber-300' : 'text-sm font-bold text-zinc-200'}>
+                  🎲 随机
+                </div>
+                <div className="mt-2 text-[11px] leading-relaxed text-zinc-500">随机获得一名武将</div>
+              </button>
+              {GENERALS.map((g) => {
+                const active = general?.name === g.name
+                return (
+                  <button
+                    key={g.name}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => onGeneralChange(g)}
+                    className={[
+                      'rounded-lg border p-3 text-left transition-all duration-200 active:scale-[0.98]',
+                      'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
+                      active
+                        ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-400/30'
+                        : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/70',
+                    ].join(' ')}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={active ? 'text-sm font-bold text-amber-300' : 'text-sm font-bold text-zinc-200'}>{g.name}</span>
+                      <span className="text-[10px] text-rose-400">{'♥'.repeat(g.maxHp)}</span>
+                    </div>
+                    <div className="mt-1 text-[11px] font-medium text-amber-200/80">【{g.skill}】</div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{g.skillDesc}</div>
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
+
           <div className="mt-6 flex flex-col items-center gap-3">
             <Button
               size="lg"
@@ -263,6 +315,7 @@ interface HoverTip { x: number; y: number; title: string; lines: string[] }
 export default function App() {
   const [started, setStarted] = useState(false)
   const [difficulty, setDifficulty] = useState<Difficulty>('normal')
+  const [general, setGeneral] = useState<General | null>(null)
   const [state, setState] = useState<GameState>(() => newGame())
   const [hoverTip, setHoverTip] = useState<HoverTip | null>(null)
   const [selected, setSelected] = useState<number[]>([])
@@ -435,7 +488,7 @@ export default function App() {
   }
 
   const startGame = () => {
-    setState(newGame())
+    setState(newGame({ humanGeneral: general }))
     resetUi()
     setStarted(true)
   }
@@ -474,6 +527,8 @@ export default function App() {
       onDifficultyChange={setDifficulty}
       onStart={startGame}
       onOpenLibrary={() => setLibraryOpen(true)}
+      general={general}
+      onGeneralChange={setGeneral}
     />
   )
 
