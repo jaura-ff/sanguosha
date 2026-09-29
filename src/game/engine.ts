@@ -150,20 +150,27 @@ export function canBeShan(p: Player, card: Card): boolean {
   return false
 }
 
+// 从牌堆取一张牌；牌堆耗尽时自动把弃牌堆洗回牌堆（保证判定、摸牌、八卦阵等取牌永不落空）。
+function drawOne(s: GameState): Card | null {
+  if (s.deck.length === 0) {
+    if (s.discardPile.length === 0) return null
+    s.deck = s.discardPile
+    s.discardPile = []
+    for (let k = s.deck.length - 1; k > 0; k--) {
+      const j = Math.floor(Math.random() * (k + 1))
+      ;[s.deck[k], s.deck[j]] = [s.deck[j], s.deck[k]]
+    }
+    say(s, '牌堆耗尽，弃牌堆洗入牌堆')
+  }
+  return s.deck.pop() ?? null
+}
+
 function drawCards(s: GameState, pid: number, n: number) {
   const p = s.players[pid]
   for (let i = 0; i < n; i++) {
-    if (s.deck.length === 0) {
-      if (s.discardPile.length === 0) return
-      s.deck = s.discardPile
-      s.discardPile = []
-      for (let k = s.deck.length - 1; k > 0; k--) {
-        const j = Math.floor(Math.random() * (k + 1))
-        ;[s.deck[k], s.deck[j]] = [s.deck[j], s.deck[k]]
-      }
-      say(s, '弃牌堆洗入牌堆')
-    }
-    p.hand.push(s.deck.pop()!)
+    const cd = drawOne(s)
+    if (!cd) return
+    p.hand.push(cd)
   }
 }
 
@@ -323,7 +330,7 @@ function startTurn(s: GameState, pid: number) {
   let skipPlay = false
   while (p.judge.length > 0) {
     const jc = p.judge.pop()!
-    const flip = s.deck.pop()
+    const flip = drawOne(s)
     if (flip) s.discardPile.push(flip)
     if (jc.name === '乐不思蜀') {
       s.discardPile.push(jc)
@@ -592,7 +599,7 @@ function doBagua(s: GameState, pid: number): GameState {
   if (!pd || pd.kind !== 'shan' || pd.target !== pid) return s
   const p = s.players[pid]
   if (p.equip.armor?.name !== '八卦阵') return s
-  const flip = s.deck.pop()
+  const flip = drawOne(s)
   if (!flip) return s
   s.discardPile.push(flip)
   say(s, `${pname(s, pid)} 发动【八卦阵】判定：${flip.suit}${flip.color === 'red' ? '，视为打出【闪】！' : '，判定失败'}`)
