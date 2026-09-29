@@ -302,6 +302,7 @@ export default function App() {
     return null
   })
   const [minimized, setMinimized] = useState(false)
+  const [logCollapsed, setLogCollapsed] = useState(false)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [resizing, setResizing] = useState(false)
   const winRef = useRef<HTMLDivElement>(null)
@@ -832,13 +833,37 @@ export default function App() {
           </div>
         </main>
 
-        <aside className="flex h-24 shrink-0 flex-col border-t border-zinc-800 sm:h-28 md:h-auto md:w-72 md:shrink md:border-l md:border-t-0">
-          <div className="border-b border-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-300 sm:text-sm">战报</div>
-          <div ref={logRef} className="flex-1 space-y-1 overflow-y-auto p-2 text-[11px] text-zinc-400 sm:p-3 sm:text-xs">
-            {state.log.map((line, i) => (
-              <div key={i} className={i === state.log.length - 1 ? 'text-amber-200' : ''}>{line}</div>
-            ))}
+        <aside className={[
+          'flex shrink-0 flex-col border-t border-zinc-800',
+          'h-24 sm:h-28',
+          'md:h-auto md:shrink md:border-l md:border-t-0',
+          compact ? (logCollapsed ? 'md:w-10' : 'md:w-40') : 'md:w-72',
+        ].join(' ')}>
+          <div className={[
+            'flex items-center border-b border-zinc-800 py-1.5',
+            compact && logCollapsed ? 'justify-center px-1' : 'justify-between px-3',
+          ].join(' ')}>
+            {!(compact && logCollapsed) && (
+              <span className="text-xs font-bold text-zinc-300 sm:text-sm">战报</span>
+            )}
+            {compact && (
+              <button
+                type="button"
+                title={logCollapsed ? '展开战报' : '收起战报'}
+                onClick={() => setLogCollapsed((v) => !v)}
+                className="flex h-5 w-5 items-center justify-center rounded text-zinc-400 transition hover:bg-zinc-700 hover:text-amber-300"
+              >
+                {logCollapsed ? '«' : '»'}
+              </button>
+            )}
           </div>
+          {!(compact && logCollapsed) && (
+            <div ref={logRef} className="flex-1 space-y-1 overflow-y-auto p-2 text-[11px] text-zinc-400 sm:p-3 sm:text-xs">
+              {state.log.map((line, i) => (
+                <div key={i} className={i === state.log.length - 1 ? 'text-amber-200' : ''}>{line}</div>
+              ))}
+            </div>
+          )}
         </aside>
         </div>
         </>)}
