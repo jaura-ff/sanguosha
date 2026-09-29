@@ -6,6 +6,7 @@ import type { Action, Card, GameState, Player } from './game/engine'
 import { aiAction } from './game/ai'
 import type { Difficulty } from './game/ai'
 import { Button } from '@/components/ui/button'
+import { CardLibrary } from '@/components/CardLibrary'
 
 const IDENTITY_COLOR: Record<string, string> = {
   主公: 'bg-amber-500',
@@ -57,7 +58,7 @@ function EquipRow({ p }: { p: Player }) {
 }
 
 function PlayerPanel({
-  s, p, targetable, dimmed, onClick, onHover, onTap, onLeave, className,
+  s, p, targetable, dimmed, onClick, onHover, onTap, onLeave, className, seatLabel,
 }: {
   s: GameState; p: Player; targetable?: boolean; dimmed?: boolean
   onClick?: () => void
@@ -65,6 +66,7 @@ function PlayerPanel({
   onTap?: (e: React.PointerEvent, p: Player) => void
   onLeave?: () => void
   className?: string
+  seatLabel?: string
 }) {
   const identityShown = p.identityRevealed || p.isHuman || s.phase === 'gameover'
   const me = s.players[0]
@@ -86,6 +88,12 @@ function PlayerPanel({
         s.current === p.id && p.alive ? 'border-amber-400' : '',
       ].join(' ')}
     >
+      {seatLabel && (
+        <div className="mb-1 flex items-center gap-1 text-[9px] tracking-widest text-zinc-500 sm:text-[10px]">
+          <span className="h-1 w-1 rounded-full bg-zinc-600" />
+          {seatLabel}
+        </div>
+      )}
       <div className="flex items-center justify-between gap-1">
         <span className="truncate text-sm font-bold text-amber-100 sm:text-base">{p.general.name}</span>
         {identityShown && (
@@ -152,10 +160,12 @@ function StartScreen({
   difficulty,
   onDifficultyChange,
   onStart,
+  onOpenLibrary,
 }: {
   difficulty: Difficulty
   onDifficultyChange: (difficulty: Difficulty) => void
   onStart: () => void
+  onOpenLibrary: () => void
 }) {
   const rules = [
     '每名角色回合开始摸 2 张牌，出牌阶段可使用装备、锦囊与【杀】。',
@@ -238,6 +248,9 @@ function StartScreen({
             >
               开 始 游 戏
             </Button>
+            <Button size="sm" variant="outline" className="w-full sm:w-64" onClick={onOpenLibrary}>
+              图库 · 查看卡牌与武将玩法
+            </Button>
             <div className="text-[11px] text-zinc-500">开局后由你先行动，对手由 AI 自动出牌</div>
           </div>
         </div>
@@ -289,6 +302,7 @@ export default function App() {
     return null
   })
   const [minimized, setMinimized] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [resizing, setResizing] = useState(false)
   const winRef = useRef<HTMLDivElement>(null)
 
@@ -432,7 +446,7 @@ export default function App() {
   }
 
   // 四个玩家按「上 / 左 / 右 / 下（自己）」四个方位摆放
-  const seatPanel = (id: number, extra: string) => {
+  const seatPanel = (id: number, extra: string, seatLabel: string) => {
     const p = state.players[id]
     if (!p) return null
     return (
@@ -440,6 +454,7 @@ export default function App() {
         key={id}
         s={state}
         p={p}
+        seatLabel={seatLabel}
         className={`w-full min-w-0 ${extra}`}
         targetable={targetable(p)}
         dimmed={awaitingTarget !== null && !targetable(p) && p.alive}
@@ -457,6 +472,7 @@ export default function App() {
       difficulty={difficulty}
       onDifficultyChange={setDifficulty}
       onStart={startGame}
+      onOpenLibrary={() => setLibraryOpen(true)}
     />
   )
 
@@ -589,6 +605,7 @@ export default function App() {
   return (
     <div className="relative flex min-h-[100dvh] items-center justify-center bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950">
       <DisplayToggle compact={compact} onToggle={toggleCompact} />
+      <CardLibrary open={libraryOpen} onClose={() => setLibraryOpen(false)} />
       {compact && minimized && (
         <button
           type="button"
@@ -682,20 +699,23 @@ export default function App() {
           <Button size="sm" variant="ghost" className="hidden px-3 text-sm sm:inline-flex" onClick={backToMenu}>
             返回主菜单
           </Button>
+          <Button size="sm" variant="ghost" className="px-2 text-xs sm:px-3 sm:text-sm" onClick={() => setLibraryOpen(true)}>
+            图库
+          </Button>
         </div>
       </header>
 
       <div className="flex flex-1 flex-col overflow-hidden min-h-0 md:flex-row">
         <main className={`grid min-h-0 flex-1 grid-cols-3 content-start gap-2 overflow-y-auto p-2 sm:gap-3 sm:p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)] md:grid-rows-[auto_minmax(0,1fr)_auto] md:content-stretch ${compact ? '' : 'md:overflow-hidden'}`}>
-          {/* 左：1 号位 */}
-          {seatPanel(1, 'md:col-start-1 md:row-start-2 md:self-center')}
+          {/* 左：1 号位（下家） */}
+          {seatPanel(1, 'md:col-start-1 md:row-start-2 md:self-center md:mx-auto md:max-w-[190px]', '下家')}
           {/* 上：2 号位（对家） */}
-          {seatPanel(2, 'md:col-start-2 md:row-start-1 md:justify-self-center md:max-w-[240px]')}
-          {/* 右：3 号位 */}
-          {seatPanel(3, 'md:col-start-3 md:row-start-2 md:self-center')}
+          {seatPanel(2, 'md:col-start-2 md:row-start-1 md:justify-self-center md:max-w-[220px]', '对家')}
+          {/* 右：3 号位（上家） */}
+          {seatPanel(3, 'md:col-start-3 md:row-start-2 md:self-center md:mx-auto md:max-w-[190px]', '上家')}
 
-          {/* 中央：出牌提示 / 战况 */}
-          <div className="col-span-3 row-start-2 flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 text-center sm:min-h-24 sm:p-4 md:col-span-1 md:col-start-2 md:row-start-2 md:min-h-0 md:h-fit md:self-center md:py-6">
+          {/* 中央：牌桌中心 */}
+          <div className="col-span-3 row-start-2 flex min-h-20 flex-col items-center justify-center gap-2 rounded-2xl border border-zinc-700/70 bg-gradient-to-b from-zinc-900/80 to-zinc-950/60 p-3 text-center sm:min-h-24 sm:p-4 md:col-span-1 md:col-start-2 md:row-start-2 md:h-fit md:w-full md:max-w-[420px] md:self-center md:justify-self-center md:py-5">
             {state.winner ? (
               <>
                 <div className="text-xl font-bold text-amber-400 sm:text-2xl">
@@ -755,6 +775,7 @@ export default function App() {
               <PlayerPanel
                 s={state}
                 p={me}
+                seatLabel="你"
                 className="w-full shrink-0 sm:w-44"
                 onHover={onPanelHover}
                 onTap={onPanelTap}
