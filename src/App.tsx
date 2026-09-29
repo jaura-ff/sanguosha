@@ -141,6 +141,11 @@ const DIFFICULTY_NAMES: Record<Difficulty, string> = {
   hard: '困难',
 }
 
+// 小窗内容的设计基准尺寸：内容始终按此布局，再整体缩放到窗口实际大小，
+// 使缩小小窗时字体、卡片、间距等比缩小，保持整体比例。
+const BASE_WIN_W = 960
+const BASE_WIN_H = 680
+
 // 全局浮动显示模式切换：固定在右上角，主菜单与游戏内都能点，仅桌面端显示
 function DisplayToggle({ compact, onToggle }: { compact: boolean; onToggle: () => void }) {
   return (
@@ -466,6 +471,13 @@ export default function App() {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
   }, [state.log.length])
 
+  // 小窗整体等比缩放：内容按 960×(680-36 标题栏) 基准布局，再整体缩放到窗口实际大小，
+  // 使缩小小窗时字体、卡片、间距等比缩小，保持整体比例。
+  const compactScale = Math.min(
+    winSize.w / BASE_WIN_W,
+    (winSize.h - 36) / (BASE_WIN_H - 36),
+  )
+
   const me = state.players[0]
   const myTurn = state.current === 0 && state.phase === 'play' && !state.pending && !state.winner
   const discarding = state.current === 0 && state.phase === 'discard' && !state.winner
@@ -721,6 +733,10 @@ export default function App() {
             </div>
           </div>
         )}
+        <div
+          style={compact ? { zoom: compactScale, width: BASE_WIN_W, height: BASE_WIN_H - 36, flexShrink: 0 } : undefined}
+          className={compact ? 'flex min-h-0 flex-col overflow-hidden' : 'flex min-h-0 flex-1 flex-col overflow-hidden'}
+        >
         {!started ? startScreen : (<>
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-zinc-800 px-3 py-2 sm:px-6 sm:py-3 md:pr-24">
         <h1 className="text-base font-bold tracking-widest text-amber-400 sm:text-xl">
@@ -922,6 +938,7 @@ export default function App() {
         </aside>
         </div>
         </>)}
+        </div>
         {/* 右下角把手：按住鼠标左键拖动改变窗口大小 */}
         {compact && !minimized && (
           <div
