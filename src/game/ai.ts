@@ -1,6 +1,6 @@
-// AI 决策 v2：适配装备、距离、新卡牌
+// AI 决策 v3：适配装备、距离、新卡牌与全部武将技能
 import { canBeSha, canBeShan, canBeTao, distance, inRange } from './engine'
-import type { Action, GameState, Player } from './engine'
+import type { Action, Card, GameState, Player } from './engine'
 
 export type Difficulty = 'easy' | 'normal' | 'hard'
 
@@ -45,14 +45,26 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
     }
 
     if (pd.kind === 'shan') {
-      const shan = p.hand.find((cd) => canBeShan(p, cd))
-      if (shan) return { type: 'respond', pid, cardId: shan.id }
+      const shanCards = p.hand.filter((cd) => canBeShan(p, cd))
+      const source = s.players[pd.source]
+      // 吕布【无双】：需连续两张【闪】；不足且无八卦阵时，省下这一张【闪】（反正要掉血）
+      if (source.general.name === '吕布' && shanCards.length < 2 && p.equip.armor?.name !== '八卦阵') {
+        return { type: 'respond', pid, cardId: null }
+      }
+      if (shanCards.length > 0) return { type: 'respond', pid, cardId: shanCards[0].id }
       if (p.equip.armor?.name === '八卦阵') return { type: 'bagua', pid }
       return { type: 'respond', pid, cardId: null }
     }
     if (pd.kind === 'juedou') {
       const sha = p.hand.find((cd) => canBeSha(p, cd))
-      return { type: 'respond', pid, cardId: sha ? sha.id : null }
+      if (!sha) return { type: 'respond', pid, cardId: null }
+      // 困难难度：自己【杀】很少且对方手牌多时，放弃拼杀以保存【杀】
+      if (difficulty === 'hard') {
+        const mySha = p.hand.filter((cd) => canBeSha(p, cd)).length
+        const foeHand = s.players[pd.source].hand.length
+        if (mySha <= 1 && foeHand >= 3) return { type: 'respond', pid, cardId: null }
+      }
+      return { type: 'respond', pid, cardId: sha.id }
     }
     if (pd.kind === 'aoe') {
       const needSha = pd.card.name === '南蛮入侵'
@@ -63,10 +75,16 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
       const target = s.players[pd.target]
       const tao = p.hand.find((x) => canBeTao(p, x))
       if (!tao) return { type: 'respond', pid, cardId: null }
+      const isSelf = pd.target === pid
+      const targetIsLord = target.identity === '主公'
+      const targetIsRebel = target.identity === '反贼'
+      const targetIsAlly = p.identity === '反贼' ? targetIsRebel : !targetIsRebel
+      // 必救：自己、主公（非反贼视角）、反贼队友（反贼视角）；困难难度额外救队友
       const shouldSave =
-        pd.target === pid ||
-        (p.identity !== '反贼' && target.identity === '主公') ||
-        (p.identity === '反贼' && target.identity === '反贼')
+        isSelf ||
+        (p.identity !== '反贼' && targetIsLord) ||
+        (p.identity === '反贼' && targetIsRebel) ||
+        (difficulty === 'hard' && !isSelf && targetIsAlly && p.hand.length >= 2)
       return { type: 'respond', pid, cardId: shouldSave ? tao.id : null }
     }
     return null
@@ -80,7 +98,7 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
     const limit = p.hp + (p.general.name === '周瑜' ? 1 : 0)
     const need = p.hand.length - limit
     if (need <= 0) return { type: 'discard', pid: p.id, cardIds: [] }
-    const sorted = [...p.hand].sort((a, b) => discardRank(a) - discardRank(b))
+    const sorted = [...p.hand].sort((a, b) => discardRank(a, p) - discardRank(b, p))
     return { type: 'discard', pid: p.id, cardIds: sorted.slice(0, need).map((x) => x.id) }
   }
 
@@ -95,13 +113,24 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
   const equipOrder = ['weapon', 'armor', 'minus', 'plus'] as const
   for (const slot of equipOrder) {
     const eq = p.hand.find((x) => x.kind === 'equip' && x.slot === slot)
-    if (eq && !p.equip[slot]) return { type: 'play', pid: p.id, cardId: eq.id }
+    if (!eq) continue
+    if (!p.equip[slot]) return { type: 'play', pid: p.id, cardId: eq.id }
+    // 孙尚香【枭姬】：主动换装摸 2 张（困难难度或手牌偏少时）
+    if (p.general.name === '孙尚香' && (difficulty === 'hard' || p.hand.length <= 3)) {
+      return { type: 'play', pid: p.id, cardId: eq.id }
+    }
   }
 
-  // 2.2 桃
+  // 2.2 桃（真桃优先；转化桃仅在明显残血时用，避免满血浪费）
   if (p.hp < p.general.maxHp) {
-    const tao = p.hand.find((x) => canBeTao(p, x))
-    if (tao) return { type: 'play', pid: p.id, cardId: tao.id }
+    const realTao = p.hand.find((x) => x.name === '桃')
+    if (realTao) return { type: 'play', pid: p.id, cardId: realTao.id }
+    const canConvert = p.general.name === '华佗' || p.general.name === '于吉'
+    const needConvert = p.hp <= p.general.maxHp - 2 || p.hp <= 1
+    if (canConvert && needConvert) {
+      const conv = p.hand.find((x) => canBeTao(p, x) && x.name !== '桃')
+      if (conv) return { type: 'play', pid: p.id, cardId: conv.id, asTao: true }
+    }
   }
   // 2.2b 黄盖【苦肉】：残血偏高时卖血摸牌（普通/困难难度）
   if (p.general.name === '黄盖' && p.hp > 2 && difficulty !== 'easy') {
@@ -119,9 +148,11 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
   if (p.general.name === '曹仁' && !s.skillUsed && p.hand.length >= 3) {
     return { type: 'jushou', pid: p.id }
   }
-  // 2.4c 刘备【仁德】：残血时弃2手牌回1血
+  // 2.4c 刘备【仁德】：残血时弃 2 张（优先垃圾牌）回 1 血
   if (p.general.name === '刘备' && !s.skillUsed && p.hp < p.general.maxHp && p.hand.length >= 2) {
-    return { type: 'rende', pid: p.id, cardIds: p.hand.slice(0, 2).map((x) => x.id) }
+    const junk = p.hand.filter((x) => !canBeShan(p, x) && !canBeSha(p, x) && x.name !== '桃')
+    const pair = junk.length >= 2 ? junk.slice(0, 2) : p.hand.slice(0, 2)
+    return { type: 'rende', pid: p.id, cardIds: pair.map((x) => x.id) }
   }
 
   const rangeTarget = pickTarget(s, p, true, difficulty)
@@ -188,7 +219,7 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
     // 2.10 过河拆桥
     const chai = p.hand.find((x) => x.name === '过河拆桥')
     if (chai && hasCards(t)) return { type: 'play', pid: p.id, cardId: chai.id, targetId: anyTarget }
-    // 2.10b 甘宁【奇袭】：黑色手牌当过河拆桥
+    // 2.10b 甘宁【奇袭】：黑色手牌当过河拆桥（优先拆有牌的敌人）
     if (p.general.name === '甘宁' && hasCards(t)) {
       const black = p.hand.find((x) => x.color === 'black' && x.kind !== 'equip' && x.name !== '杀' && x.name !== '火杀')
       if (black) return { type: 'play', pid: p.id, cardId: black.id, targetId: anyTarget, asChai: true }
@@ -210,8 +241,17 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
   return { type: 'endPlay', pid: p.id }
 }
 
-function discardRank(card: { name: string; kind: string }): number {
+// 弃牌优先级：数值越高越「舍不得」弃。按武将转化能力保留关键牌。
+function discardRank(card: Card, p: Player): number {
+  const g = p.general.name
   if (card.kind === 'equip') return 90
+  // 转化型武将保留可作为技能素材的牌
+  if (g === '华佗' && card.color === 'red') return 85 // 红牌可当【桃】
+  if (g === '甄姬' && card.color === 'black') return 85 // 黑牌可当【闪】
+  if (g === '甘宁' && card.color === 'black' && card.name !== '杀' && card.name !== '火杀') return 70 // 黑牌可当【过河拆桥】
+  if (g === '大乔' && card.suit === '♦') return 70 // 方块可当【乐不思蜀】
+  if (g === '关羽' && card.color === 'red') return 70 // 红牌可当【杀】
+  if (g === '赵云') return card.name === '杀' || card.name === '闪' ? 80 : 20 // 【杀】【闪】可互转
   switch (card.name) {
     case '桃': return 100
     case '闪': return 80
