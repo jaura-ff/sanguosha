@@ -184,6 +184,9 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
     const lord = s.players.find((x) => x.alive && x.identity === '主公')
     const allyHurt = p.hp < p.general.maxHp || (p.identity !== '反贼' && lord && lord.hp < lord.general.maxHp)
     if (tao2 && allyHurt) return { type: 'play', pid: p.id, cardId: tao2.id }
+    // 2.12 五谷丰登（自己牌少时使用）
+    const wg = p.hand.find((x) => x.name === '五谷丰登')
+    if (wg && p.hand.length <= 3) return { type: 'play', pid: p.id, cardId: wg.id }
   }
   return { type: 'endPlay', pid: p.id }
 }

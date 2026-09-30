@@ -4,8 +4,8 @@
 export type Suit = '♠' | '♥' | '♣' | '♦'
 export type CardName =
   | '杀' | '火杀' | '闪' | '桃' | '酒'
-  | '无中生有' | '决斗' | '南蛮入侵' | '万箭齐发' | '过河拆桥' | '顺手牵羊' | '桃园结义' | '乐不思蜀' | '兵粮寸断' | '闪电'
-  | '诸葛连弩' | '青釭剑' | '青龙偃月刀' | '古锭刀' | '八卦阵' | '仁王盾' | '藤甲' | '白银狮子' | '的卢' | '赤兔'
+  | '无中生有' | '决斗' | '南蛮入侵' | '万箭齐发' | '过河拆桥' | '顺手牵羊' | '桃园结义' | '乐不思蜀' | '兵粮寸断' | '闪电' | '五谷丰登'
+  | '诸葛连弩' | '青釭剑' | '青龙偃月刀' | '古锭刀' | '方天画戟' | '朱雀羽扇' | '八卦阵' | '仁王盾' | '藤甲' | '白银狮子' | '的卢' | '赤兔'
 
 export type CardKind = 'basic' | 'trick' | 'equip'
 export type EquipSlot = 'weapon' | 'armor' | 'plus' | 'minus'
@@ -78,6 +78,10 @@ export const GENERALS: General[] = [
   { name: '吕布', skill: '无双', skillDesc: '你的【杀】需要目标连续打出两张【闪】才能抵消', maxHp: 4 },
   { name: '黄盖', skill: '苦肉', skillDesc: '出牌阶段，可失去 1 点体力摸 2 张牌（可多次）', maxHp: 4 },
   { name: '华佗', skill: '急救', skillDesc: '你的红色牌可以当【桃】使用', maxHp: 3 },
+  { name: '郭嘉', skill: '遗计', skillDesc: '每受到 1 点伤害，摸 2 张牌', maxHp: 3 },
+  { name: '诸葛亮', skill: '观星', skillDesc: '摸牌阶段多摸 1 张牌（共 3 张）', maxHp: 3 },
+  { name: '司马懿', skill: '反馈', skillDesc: '受到伤害时，从伤害来源获得一张牌', maxHp: 3 },
+  { name: '周瑜', skill: '英姿', skillDesc: '摸牌阶段多摸 1 张牌，且手牌上限 +1', maxHp: 3 },
 ]
 
 let cardSeq = 1
@@ -104,11 +108,14 @@ export function buildDeck(): Card[] {
   for (let i = 0; i < 2; i++) cards.push(mk('乐不思蜀', '♥', 'trick'))
   for (let i = 0; i < 2; i++) cards.push(mk('兵粮寸断', i % 2 ? '♣' : '♠', 'trick'))
   cards.push(mk('闪电', '♠', 'trick'))
+  for (let i = 0; i < 2; i++) cards.push(mk('五谷丰登', i % 2 ? '♥' : '♦', 'trick'))
   // 装备
   cards.push(mk('诸葛连弩', '♣', 'equip', 'weapon', 1))
   cards.push(mk('青釭剑', '♠', 'equip', 'weapon', 2))
   cards.push(mk('青龙偃月刀', '♠', 'equip', 'weapon', 3))
   cards.push(mk('古锭刀', '♠', 'equip', 'weapon', 2))
+  cards.push(mk('方天画戟', '♦', 'equip', 'weapon', 4))
+  cards.push(mk('朱雀羽扇', '♦', 'equip', 'weapon', 4))
   cards.push(mk('八卦阵', '♠', 'equip', 'armor'))
   cards.push(mk('仁王盾', '♣', 'equip', 'armor'))
   cards.push(mk('藤甲', '♣', 'equip', 'armor'))
@@ -237,6 +244,11 @@ function unlimitedSha(p: Player): boolean {
   return p.general.name === '张飞' || p.equip.weapon?.name === '诸葛连弩'
 }
 
+// 手牌上限：默认等于体力，周瑜【英姿】+1
+function handLimit(p: Player): number {
+  return p.hp + (p.general.name === '周瑜' ? 1 : 0)
+}
+
 // ---------- 伤害 / 濒死 / 胜负 ----------
 
 function checkWin(s: GameState) {
@@ -271,9 +283,32 @@ function damage(s: GameState, target: number, n: number, source: number | null) 
     }
     s.pending = { kind: 'dying', target, queue }
     say(s, `${pname(s, target)} 进入濒死状态，等待【桃】救援`)
-  } else if (t.general.name === '曹操') {
+    return
+  }
+  // 受伤摸牌类技能（未死亡时）
+  if (t.general.name === '曹操') {
     drawCards(s, target, n)
     say(s, `${pname(s, target)} 发动【奸雄】摸 ${n} 张牌`)
+  } else if (t.general.name === '郭嘉') {
+    drawCards(s, target, n * 2)
+    say(s, `${pname(s, target)} 发动【遗计】摸 ${n * 2} 张牌`)
+  }
+  // 司马懿【反馈】：受到伤害后从伤害来源获得一张牌（无来源时不触发）
+  if (t.general.name === '司马懿' && source !== null) {
+    const src = s.players[source]
+    if (src && src.alive && src.id !== target) {
+      const got = src.hand.length > 0
+        ? src.hand.splice(Math.floor(Math.random() * src.hand.length), 1)[0]
+        : Object.values(src.equip).find(Boolean)
+      if (got) {
+        if (got === src.equip.weapon) delete src.equip.weapon
+        else if (got === src.equip.armor) delete src.equip.armor
+        else if (got === src.equip.plus) delete src.equip.plus
+        else if (got === src.equip.minus) delete src.equip.minus
+        t.hand.push(got)
+        say(s, `${pname(s, target)} 发动【反馈】，从 ${pname(s, source)} 获得【${got.name}】`)
+      }
+    }
   }
   void source
 }
@@ -390,16 +425,18 @@ function startTurn(s: GameState, pid: number) {
   }
 
   if (!skipDraw) {
-    drawCards(s, pid, 2)
-    say(s, `—— ${pname(s, pid)} 的回合，摸 2 张牌 ——`)
+    const drawN = 2 + (p.general.name === '诸葛亮' || p.general.name === '周瑜' ? 1 : 0)
+    drawCards(s, pid, drawN)
+    if (drawN > 2) say(s, `${pname(s, pid)} 发动【${p.general.name === '诸葛亮' ? '观星' : '英姿'}】多摸 1 张牌`)
+    say(s, `—— ${pname(s, pid)} 的回合，摸 ${drawN} 张牌 ——`)
   } else {
     say(s, `—— ${pname(s, pid)} 的回合，跳过摸牌 ——`)
   }
 
   if (skipPlay) {
-    if (p.hand.length > p.hp) {
+    if (p.hand.length > handLimit(p)) {
       s.phase = 'discard'
-      say(s, `${pname(s, pid)} 需弃置 ${p.hand.length - p.hp} 张牌`)
+      say(s, `${pname(s, pid)} 需弃置 ${p.hand.length - handLimit(p)} 张牌`)
     } else {
       endTurn(s, pid)
     }
@@ -493,8 +530,10 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     if (!unlimitedSha(p) && s.shaUsed >= 1) { say(s, '每回合只能使用一张【杀】'); return s }
     const t = s.players[targetId!]
     const ignoreArmor = p.equip.weapon?.name === '青釭剑'
+    // 是否视为火杀：火杀本体，或装备【朱雀羽扇】的普通【杀】
+    const isFire = card.name === '火杀' || p.equip.weapon?.name === '朱雀羽扇'
     // 藤甲：免疫普通【杀】（青釭剑无视防具）；火杀不受藤甲免疫，反而伤害 +1
-    if (!ignoreArmor && t.equip.armor?.name === '藤甲' && card.name !== '火杀') {
+    if (!ignoreArmor && t.equip.armor?.name === '藤甲' && !isFire) {
       use(card, targetId)
       say(s, `${pname(s, targetId!)} 的【藤甲】免疫了普通【杀】`)
       return s
@@ -516,7 +555,7 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
       dmg++
       say(s, `${pname(s, pid)} 的【古锭刀】对空手牌目标伤害 +1`)
     }
-    if (card.name === '火杀' && t.equip.armor?.name === '藤甲') {
+    if (isFire && t.equip.armor?.name === '藤甲') {
       dmg++
       say(s, `${pname(s, targetId!)} 的【藤甲】遇火，伤害 +1`)
     }
@@ -557,6 +596,15 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
       say(s, `${pname(s, pid)} 使用【桃园结义】，全员回复 1 点体力`)
       for (const pl of s.players) {
         if (pl.alive && pl.hp < pl.general.maxHp) pl.hp++
+      }
+      jizhi(s, pid)
+      return s
+    }
+    case '五谷丰登': {
+      use(card)
+      say(s, `${pname(s, pid)} 使用【五谷丰登】，全体存活角色各摸 1 张牌`)
+      for (const pl of s.players) {
+        if (pl.alive) drawCards(s, pl.id, 1)
       }
       jizhi(s, pid)
       return s
@@ -671,9 +719,9 @@ function jizhi(s: GameState, pid: number) {
 function doEndPlay(s: GameState, pid: number): GameState {
   if (s.pending || s.current !== pid || s.phase !== 'play') return s
   const p = s.players[pid]
-  if (p.hand.length > p.hp) {
+  if (p.hand.length > handLimit(p)) {
     s.phase = 'discard'
-    say(s, `${pname(s, pid)} 需弃置 ${p.hand.length - p.hp} 张牌`)
+    say(s, `${pname(s, pid)} 需弃置 ${p.hand.length - handLimit(p)} 张牌`)
     return s
   }
   return endTurn(s, pid)
@@ -682,7 +730,7 @@ function doEndPlay(s: GameState, pid: number): GameState {
 function doDiscard(s: GameState, pid: number, cardIds: number[]): GameState {
   if (s.phase !== 'discard' || s.current !== pid) return s
   const p = s.players[pid]
-  const need = p.hand.length - p.hp
+  const need = p.hand.length - handLimit(p)
   if (cardIds.length !== need) return s
   for (const id of cardIds) {
     const cd = removeCard(p, id)

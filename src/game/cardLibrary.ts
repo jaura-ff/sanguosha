@@ -120,6 +120,13 @@ export const CARD_INFO: CardInfo[] = [
     tips: '高风险高回报：拖得越久越可能炸到自己。对方残血时丢给下家（先放给自己会绕一圈）风险自担。',
   },
   {
+    name: '五谷丰登', kind: 'trick', count: 2,
+    summary: '全体各摸一张',
+    effect: '所有存活角色各摸 1 张牌。',
+    usage: '出牌阶段使用，对所有存活角色生效。',
+    tips: '会同时给敌人摸牌。己方牌少、想补资源时用；敌方也缺牌时收益更高。黄月英用锦囊会触发【集智】。',
+  },
+  {
     name: '诸葛连弩', kind: 'equip', slot: 'weapon', range: 1, count: 1,
     summary: '武器：无限出杀',
     effect: '攻击范围 1，但出【杀】不再受每回合一次的限制。',
@@ -146,6 +153,20 @@ export const CARD_INFO: CardInfo[] = [
     effect: '攻击范围 2；你的【杀】对无手牌目标造成的伤害 +1。',
     usage: '出牌阶段装备到武器栏。',
     tips: '配合【过河拆桥】【顺手牵羊】先把对方手牌清空，再出杀一击 2 血，爆发极高。',
+  },
+  {
+    name: '方天画戟', kind: 'equip', slot: 'weapon', range: 4, count: 1,
+    summary: '武器：全场最远',
+    effect: '攻击范围 4，基本覆盖全场所有角色。',
+    usage: '出牌阶段装备到武器栏。',
+    tips: '攻击范围最大的武器，隔着所有人也能出杀，吕布装备它相当顺手。',
+  },
+  {
+    name: '朱雀羽扇', kind: 'equip', slot: 'weapon', range: 4, count: 1,
+    summary: '武器：普通杀变火杀',
+    effect: '攻击范围 4；你的普通【杀】视为【火杀】（可克制藤甲）。',
+    usage: '出牌阶段装备到武器栏。',
+    tips: '装了它就不用留火杀了，普通杀也能烧藤甲。范围 4 同样能打全场。',
   },
   {
     name: '八卦阵', kind: 'equip', slot: 'armor', count: 2,
