@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   apply, attackRange, canBeSha, canBeShan, canBeTao, distance, inRange, newGame, pname, GENERALS,
 } from './game/engine'
-import type { Action, Card, GameState, General, Player } from './game/engine'
+import type { Action, Card, CardName, GameState, General, Player } from './game/engine'
 import { aiAction } from './game/ai'
 import type { Difficulty } from './game/ai'
+import { CARD_INFO, KIND_LABEL, SLOT_LABEL } from './game/cardLibrary'
 import { Button } from '@/components/ui/button'
 import { CardLibrary } from '@/components/CardLibrary'
 
@@ -15,11 +16,16 @@ const IDENTITY_COLOR: Record<string, string> = {
 }
 
 function CardView({
-  card, selected, disabled, onClick, small,
-}: { card: Card; selected?: boolean; disabled?: boolean; onClick?: () => void; small?: boolean }) {
+  card, selected, disabled, onClick, small, onHover, onLeave,
+}: {
+  card: Card; selected?: boolean; disabled?: boolean; onClick?: () => void; small?: boolean
+  onHover?: (e: React.MouseEvent) => void; onLeave?: () => void
+}) {
   return (
     <button
       onClick={onClick}
+      onMouseEnter={onHover}
+      onMouseLeave={onLeave}
       title={card.name}
       className={[
         'relative rounded-md border shadow-sm font-bold transition-all select-none',
@@ -363,6 +369,7 @@ export default function App() {
   const [general, setGeneral] = useState<General | null>(null)
   const [state, setState] = useState<GameState>(() => newGame())
   const [hoverTip, setHoverTip] = useState<HoverTip | null>(null)
+  const [cardTip, setCardTip] = useState<{ x: number; y: number; name: CardName } | null>(null)
   const [selected, setSelected] = useState<number[]>([])
   const [awaitingTarget, setAwaitingTarget] = useState<number | null>(null)
   const [hint, setHint] = useState('')
@@ -724,6 +731,20 @@ export default function App() {
 
   const onPanelHover = (e: React.MouseEvent, p: Player) => showTip(e.clientX, e.clientY, p, false)
 
+  // 手牌悬停：弹出该牌玩法说明弹框
+  const cardInfoByName = useMemo(() => {
+    const map = new Map<CardName, (typeof CARD_INFO)[number]>()
+    for (const c of CARD_INFO) map.set(c.name, c)
+    return map
+  }, [])
+  const onCardHover = (e: React.MouseEvent, card: Card) => {
+    const tipW = 260
+    const x = Math.max(8, Math.min(e.clientX + 14, window.innerWidth - tipW - 8))
+    const y = Math.max(8, e.clientY - 10)
+    setCardTip({ x, y, name: card.name })
+  }
+  const onCardLeave = () => setCardTip(null)
+
   // 触屏没有 hover，改为轻点角色弹出说明，2.6 秒后自动收起
   const onPanelTap = (e: React.PointerEvent, p: Player) => {
     if (e.pointerType === 'mouse') return
@@ -925,6 +946,8 @@ export default function App() {
                         selected={selected.includes(card.id) || awaitingTarget === card.id}
                         disabled={blocked || pendingDisabled}
                         onClick={() => onHandClick(card)}
+                        onHover={(e) => onCardHover(e, card)}
+                        onLeave={onCardLeave}
                       />
                     )
                   })}
@@ -1059,6 +1082,29 @@ export default function App() {
           ))}
         </div>
       )}
+
+      {/* 卡牌说明弹框 */}
+      {cardTip && (() => {
+        const info = cardInfoByName.get(cardTip.name)
+        if (!info) return null
+        const badge = info.kind === 'equip' && info.slot ? SLOT_LABEL[info.slot] : KIND_LABEL[info.kind]
+        return (
+          <div
+            className="pointer-events-none fixed z-50 w-64 max-w-[76vw] rounded-lg border border-amber-500/50 bg-zinc-950/95 p-3 shadow-xl"
+            style={{ left: cardTip.x, top: cardTip.y }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-bold text-amber-300">{info.name}</div>
+              <div className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{badge}</div>
+            </div>
+            <div className="mt-1.5 text-xs leading-relaxed text-zinc-300">{info.effect}</div>
+            <div className="mt-2 border-t border-zinc-800 pt-1.5 text-[11px] text-zinc-500">
+              <div className="text-[10px] tracking-widest text-zinc-600">使用时机</div>
+              <div className="mt-0.5 leading-relaxed text-zinc-400">{info.usage}</div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
