@@ -1,5 +1,5 @@
 // AI 决策 v2：适配装备、距离、新卡牌
-import { canBeSha, canBeShan, distance, inRange } from './engine'
+import { canBeSha, canBeShan, canBeTao, distance, inRange } from './engine'
 import type { Action, GameState, Player } from './engine'
 
 export type Difficulty = 'easy' | 'normal' | 'hard'
@@ -61,7 +61,7 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
     }
     if (pd.kind === 'dying') {
       const target = s.players[pd.target]
-      const tao = p.hand.find((x) => x.name === '桃')
+      const tao = p.hand.find((x) => canBeTao(p, x))
       if (!tao) return { type: 'respond', pid, cardId: null }
       const shouldSave =
         pd.target === pid ||
@@ -99,8 +99,12 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
 
   // 2.2 桃
   if (p.hp < p.general.maxHp) {
-    const tao = p.hand.find((x) => x.name === '桃')
+    const tao = p.hand.find((x) => canBeTao(p, x))
     if (tao) return { type: 'play', pid: p.id, cardId: tao.id }
+  }
+  // 2.2b 黄盖【苦肉】：残血偏高时卖血摸牌（普通/困难难度）
+  if (p.general.name === '黄盖' && p.hp > 2 && difficulty !== 'easy') {
+    return { type: 'kuro', pid: p.id }
   }
   // 2.3 无中生有
   const wz = p.hand.find((x) => x.name === '无中生有')

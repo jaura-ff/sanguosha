@@ -43,7 +43,7 @@ export interface Player {
 }
 
 export type Pending =
-  | { kind: 'shan'; source: number; target: number; damage?: number }
+  | { kind: 'shan'; source: number; target: number; damage?: number; dodged?: boolean }
   | { kind: 'juedou'; source: number; target: number }
   | { kind: 'aoe'; card: Card; source: number; queue: number[] }
   | { kind: 'dying'; target: number; queue: number[] }
@@ -74,6 +74,10 @@ export const GENERALS: General[] = [
   { name: '黄月英', skill: '集智', skillDesc: '每使用一张锦囊牌，摸一张牌', maxHp: 3 },
   { name: '曹操', skill: '奸雄', skillDesc: '每受到 1 点伤害，摸一张牌', maxHp: 4 },
   { name: '孙权', skill: '制衡', skillDesc: '出牌阶段限一次，弃任意张手牌并摸等量牌', maxHp: 4 },
+  { name: '马超', skill: '马术', skillDesc: '你与其他角色的距离 -1', maxHp: 4 },
+  { name: '吕布', skill: '无双', skillDesc: '你的【杀】需要目标连续打出两张【闪】才能抵消', maxHp: 4 },
+  { name: '黄盖', skill: '苦肉', skillDesc: '出牌阶段，可失去 1 点体力摸 2 张牌（可多次）', maxHp: 4 },
+  { name: '华佗', skill: '急救', skillDesc: '你的红色牌可以当【桃】使用', maxHp: 3 },
 ]
 
 let cardSeq = 1
@@ -156,6 +160,13 @@ export function canBeShan(p: Player, card: Card): boolean {
   return false
 }
 
+// 是否可当【桃】使用：桃本体，或华佗的红色牌（急救）
+export function canBeTao(p: Player, card: Card): boolean {
+  if (card.name === '桃') return true
+  if (p.general.name === '华佗' && card.color === 'red' && card.kind !== 'equip') return true
+  return false
+}
+
 // 从牌堆取一张牌；牌堆耗尽时自动把弃牌堆洗回牌堆（保证判定、摸牌、八卦阵等取牌永不落空）。
 function drawOne(s: GameState): Card | null {
   if (s.deck.length === 0) {
@@ -206,6 +217,7 @@ export function distance(s: GameState, from: number, to: number): number {
   const n = alive.length
   let d = Math.min(Math.abs(i - j), n - Math.abs(i - j))
   if (s.players[from].equip.minus) d -= 1
+  if (s.players[from].general.name === '马超') d -= 1 // 马术
   if (s.players[to].equip.plus) d += 1
   return Math.max(d, 1)
 }
@@ -384,22 +396,24 @@ function startTurn(s: GameState, pid: number) {
 // ---------- Action ----------
 
 export type Action =
-  | { type: 'play'; pid: number; cardId: number; targetId?: number; asSha?: boolean }
+  | { type: 'play'; pid: number; cardId: number; targetId?: number; asSha?: boolean; asTao?: boolean }
   | { type: 'endPlay'; pid: number }
   | { type: 'discard'; pid: number; cardIds: number[] }
   | { type: 'respond'; pid: number; cardId: number | null }
   | { type: 'quit' }
   | { type: 'zhiheng'; pid: number; cardIds: number[] }
+  | { type: 'kuro'; pid: number }
   | { type: 'bagua'; pid: number }
 
 export function apply(prev: GameState, a: Action): GameState {
   const s = clone(prev)
   switch (a.type) {
-    case 'play': return doPlay(s, a.pid, a.cardId, a.targetId, a.asSha)
+    case 'play': return doPlay(s, a.pid, a.cardId, a.targetId, a.asSha, a.asTao)
     case 'endPlay': return doEndPlay(s, a.pid)
     case 'discard': return doDiscard(s, a.pid, a.cardIds)
     case 'respond': return doRespond(s, a.pid, a.cardId)
     case 'zhiheng': return doZhiheng(s, a.pid, a.cardIds)
+    case 'kuro': return doKuro(s, a.pid)
     case 'bagua': return doBagua(s, a.pid)
     case 'quit': {
       s.pending = null
@@ -412,7 +426,7 @@ export function apply(prev: GameState, a: Action): GameState {
   }
 }
 
-function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, asShaFlag?: boolean): GameState {
+function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, asShaFlag?: boolean, asTaoFlag?: boolean): GameState {
   if (s.pending || s.phase !== 'play' || s.current !== pid) return s
   const p = s.players[pid]
   const card = p.hand.find((cd) => cd.id === cardId)
@@ -451,6 +465,16 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     ((p.general.name === '赵云' || p.general.name === '关羽') && card.name === '闪') ||
     (p.general.name === '关羽' && card.color === 'red' && !!asShaFlag)
 
+  // 华佗【急救】：红牌当桃（需显式开启，主动给自己回血；濒死救人走响应）
+  const asTao = canBeTao(p, card) && card.name !== '桃' && !!asTaoFlag
+  if (asTao && !asSha) {
+    if (p.hp >= p.general.maxHp) { say(s, '体力已满，无法使用【桃】'); return s }
+    use(card, pid)
+    p.hp++
+    say(s, `${pname(s, pid)} 发动【急救】，将【${card.name}】当【桃】使用，回复 1 点体力`)
+    return s
+  }
+
   if (asSha) {
     if (!validTarget(targetId, true)) { say(s, '目标不在攻击范围内'); return s }
     if (!unlimitedSha(p) && s.shaUsed >= 1) { say(s, '每回合只能使用一张【杀】'); return s }
@@ -476,7 +500,10 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     s.shaUsed++
     use(card, targetId)
     say(s, `${pname(s, pid)} 对 ${pname(s, targetId!)} 使用【杀】`)
-    s.pending = { kind: 'shan', source: pid, target: targetId!, damage: dmg }
+    if (p.general.name === '吕布') {
+      say(s, `${pname(s, pid)} 的【无双】生效，目标需连续打出两张【闪】`)
+    }
+    s.pending = { kind: 'shan', source: pid, target: targetId!, damage: dmg, dodged: false }
     return s
   }
 
@@ -653,6 +680,27 @@ function doZhiheng(s: GameState, pid: number, cardIds: number[]): GameState {
   return s
 }
 
+// 黄盖【苦肉】：失去 1 点体力，摸 2 张牌（可多次，但会进入濒死）
+function doKuro(s: GameState, pid: number): GameState {
+  if (s.pending || s.phase !== 'play' || s.current !== pid) return s
+  const p = s.players[pid]
+  if (p.general.name !== '黄盖' || p.hp <= 1) return s
+  p.hp -= 1
+  say(s, `${pname(s, pid)} 发动【苦肉】，失去 1 点体力（${p.hp}/${p.general.maxHp}）`)
+  drawCards(s, pid, 2)
+  if (p.hp <= 0) {
+    const queue: number[] = []
+    let i = s.current
+    for (let k = 0; k < s.players.length; k++) {
+      if (s.players[i].alive) queue.push(i)
+      i = (i + 1) % s.players.length
+    }
+    s.pending = { kind: 'dying', target: pid, queue }
+    say(s, `${pname(s, pid)} 进入濒死状态，等待【桃】救援`)
+  }
+  return s
+}
+
 // 八卦阵判定
 function doBagua(s: GameState, pid: number): GameState {
   const pd = s.pending
@@ -683,6 +731,12 @@ function doRespond(s: GameState, pid: number, cardId: number | null): GameState 
       if (!card || !canBeShan(p, card)) return s
       removeCard(p, cardId)
       s.discardPile.push(card)
+      // 吕布【无双】：需要连续两张闪；第一张闪后仍要继续闪
+      if (pd.source !== null && s.players[pd.source].general.name === '吕布' && !pd.dodged) {
+        say(s, `${pname(s, pid)} 打出【闪】；吕布【无双】还需再出一张【闪】`)
+        s.pending = { ...pd, dodged: true }
+        return s
+      }
       say(s, `${pname(s, pid)} 打出【闪】抵消了【杀】`)
       s.pending = null
       // 青龙偃月刀：杀被闪后可再出一张
@@ -742,12 +796,13 @@ function doRespond(s: GameState, pid: number, cardId: number | null): GameState 
     if (pd.queue[0] !== pid) return s
     if (cardId !== null) {
       const card = p.hand.find((cd) => cd.id === cardId)
-      if (!card || card.name !== '桃') return s
+      if (!card || !canBeTao(p, card)) return s
       removeCard(p, cardId)
       s.discardPile.push(card)
       const t = s.players[pd.target]
       t.hp++
-      say(s, `${pname(s, pid)} 使用【桃】，${pname(s, pd.target)} 体力回复至 ${t.hp}`)
+      const isJijiu = card.name !== '桃'
+      say(s, `${pname(s, pid)} ${isJijiu ? `发动【急救】将【${card.name}】当【桃】` : '使用【桃】'}，${pname(s, pd.target)} 体力回复至 ${t.hp}`)
       if (t.hp > 0) {
         s.pending = null
         say(s, `${pname(s, pd.target)} 脱离濒死`)

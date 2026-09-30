@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  apply, attackRange, canBeSha, canBeShan, distance, inRange, newGame, pname, GENERALS,
+  apply, attackRange, canBeSha, canBeShan, canBeTao, distance, inRange, newGame, pname, GENERALS,
 } from './game/engine'
 import type { Action, Card, GameState, General, Player } from './game/engine'
 import { aiAction } from './game/ai'
@@ -176,6 +176,7 @@ function StartScreen({
   general: General | null
   onGeneralChange: (general: General | null) => void
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false)
   const rules = [
     '每名角色回合开始摸 2 张牌，出牌阶段可使用装备、锦囊与【杀】。',
     '每回合限出 1 张【杀】（张飞、诸葛连弩不受此限）。',
@@ -251,51 +252,90 @@ function StartScreen({
 
           <fieldset className="mt-6">
             <legend className="mb-3 text-xs font-bold tracking-widest text-zinc-400">选 择 武 将</legend>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <button
                 type="button"
-                aria-pressed={general === null}
-                onClick={() => onGeneralChange(null)}
-                className={[
-                  'rounded-lg border p-3 text-left transition-all duration-200 active:scale-[0.98]',
-                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
-                  general === null
-                    ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-400/30'
-                    : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/70',
-                ].join(' ')}
+                onClick={() => setPickerOpen(true)}
+                className="group flex w-full items-center justify-between rounded-lg border border-zinc-700 bg-zinc-800/40 px-4 py-3 text-left transition hover:border-amber-400/60 hover:bg-zinc-800/70"
               >
-                <div className={general === null ? 'text-sm font-bold text-amber-300' : 'text-sm font-bold text-zinc-200'}>
-                  🎲 随机
+                <div>
+                  <div className="text-xs text-zinc-500">当前武将</div>
+                  <div className="mt-0.5 text-base font-bold text-amber-300">
+                    {general ? general.name : '🎲 随机'} <span className="text-xs text-rose-400">{general ? '♥'.repeat(general.maxHp) : ''}</span>
+                  </div>
+                  {general && <div className="mt-0.5 text-[11px] text-amber-200/80">【{general.skill}】{general.skillDesc}</div>}
                 </div>
-                <div className="mt-2 text-[11px] leading-relaxed text-zinc-500">随机获得一名武将</div>
+                <span className="text-zinc-500 transition group-hover:translate-x-1 group-hover:text-amber-300">选择 →</span>
               </button>
-              {GENERALS.map((g) => {
-                const active = general?.name === g.name
-                return (
-                  <button
-                    key={g.name}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => onGeneralChange(g)}
-                    className={[
-                      'rounded-lg border p-3 text-left transition-all duration-200 active:scale-[0.98]',
-                      'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
-                      active
-                        ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-400/30'
-                        : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/70',
-                    ].join(' ')}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className={active ? 'text-sm font-bold text-amber-300' : 'text-sm font-bold text-zinc-200'}>{g.name}</span>
-                      <span className="text-[10px] text-rose-400">{'♥'.repeat(g.maxHp)}</span>
-                    </div>
-                    <div className="mt-1 text-[11px] font-medium text-amber-200/80">【{g.skill}】</div>
-                    <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{g.skillDesc}</div>
-                  </button>
-                )
-              })}
+              <Button size="sm" variant="outline" onClick={() => onGeneralChange(null)}>随机</Button>
             </div>
           </fieldset>
+
+          {/* 选将弹出面板 */}
+          {pickerOpen && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4" onClick={() => setPickerOpen(false)}>
+              <div
+                className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3">
+                  <div className="text-sm font-bold tracking-widest text-amber-300">选 择 武 将</div>
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen(false)}
+                    className="flex h-7 w-7 items-center justify-center rounded text-zinc-400 hover:bg-zinc-700 hover:text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <button
+                      type="button"
+                      aria-pressed={general === null}
+                      onClick={() => { onGeneralChange(null); setPickerOpen(false) }}
+                      className={[
+                        'rounded-lg border p-3 text-left transition-all duration-200 active:scale-[0.98]',
+                        general === null
+                          ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-400/30'
+                          : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/70',
+                      ].join(' ')}
+                    >
+                      <div className={general === null ? 'text-sm font-bold text-amber-300' : 'text-sm font-bold text-zinc-200'}>
+                        🎲 随机
+                      </div>
+                      <div className="mt-2 text-[11px] leading-relaxed text-zinc-500">随机获得一名武将</div>
+                    </button>
+                    {GENERALS.map((g) => {
+                      const active = general?.name === g.name
+                      return (
+                        <button
+                          key={g.name}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => { onGeneralChange(g); setPickerOpen(false) }}
+                          className={[
+                            'rounded-lg border p-3 text-left transition-all duration-200 active:scale-[0.98]',
+                            'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
+                            active
+                              ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-400/30'
+                              : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/70',
+                          ].join(' ')}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className={active ? 'text-sm font-bold text-amber-300' : 'text-sm font-bold text-zinc-200'}>{g.name}</span>
+                            <span className="text-[10px] text-rose-400">{'♥'.repeat(g.maxHp)}</span>
+                          </div>
+                          <div className="mt-1 text-[11px] font-medium text-amber-200/80">【{g.skill}】</div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{g.skillDesc}</div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="mt-6 flex flex-col items-center gap-3">
             <Button
@@ -328,6 +368,7 @@ export default function App() {
   const [hint, setHint] = useState('')
   const [wusheng, setWusheng] = useState(false) // 关羽：红牌当杀模式
   const [zhihengMode, setZhihengMode] = useState(false) // 孙权：制衡选牌模式
+  const [jijiu, setJijiu] = useState(false) // 华佗：红牌当桃模式
   // 桌面端「小窗 / 全屏」显示模式，仅 md 以上生效，选择会被记住
   const [compact, setCompact] = useState(() => {
     try { return localStorage.getItem('sgs:compact') === '1' } catch { return false }
@@ -457,6 +498,7 @@ export default function App() {
     setHint('')
     setWusheng(false)
     setZhihengMode(false)
+    setJijiu(false)
     if (tipTimer.current) clearTimeout(tipTimer.current)
     setHoverTip(null)
   }
@@ -499,6 +541,7 @@ export default function App() {
     setHint('')
     setWusheng(false)
     setZhihengMode(false)
+    setJijiu(false)
     setHoverTip(null)
   }
 
@@ -553,7 +596,7 @@ export default function App() {
     if (myPending.kind === 'juedou') return canBeSha(me, card)
     if (myPending.kind === 'aoe')
       return myPending.card.name === '南蛮入侵' ? canBeSha(me, card) : canBeShan(me, card)
-    if (myPending.kind === 'dying') return card.name === '桃'
+    if (myPending.kind === 'dying') return canBeTao(me, card)
     return false
   }
 
@@ -602,6 +645,10 @@ export default function App() {
   const needsTarget = (card: Card): boolean =>
     isShaLike(card) || ['决斗', '过河拆桥', '顺手牵羊', '乐不思蜀', '兵粮寸断'].includes(card.name)
 
+  // 华佗【急救】：开启 jijiu 后，红色非装备牌可当【桃】使用（主动回血）
+  const isJijiuCard = (card: Card): boolean =>
+    me.general.name === '华佗' && jijiu && card.color === 'red' && card.kind !== 'equip'
+
   const targetable = (p: Player): boolean => {
     if (awaitingTarget === null || !myTurn || p.id === 0 || !p.alive) return false
     const card = me.hand.find((c) => c.id === awaitingTarget)
@@ -624,6 +671,11 @@ export default function App() {
       return
     }
     if (!myTurn) { setHint('还没到你的回合'); return }
+    if (isJijiuCard(card)) {
+      if (me.hp >= me.general.maxHp) { setHint('体力已满，无法使用【急救】'); return }
+      dispatch({ type: 'play', pid: 0, cardId: card.id, asTao: true })
+      return
+    }
     if (zhihengMode && me.general.name === '孙权' && !state.skillUsed) {
       setSelected((prev) =>
         prev.includes(card.id) ? prev.filter((x) => x !== card.id) : [...prev, card.id],
@@ -907,6 +959,20 @@ export default function App() {
                       {me.general.name === '孙权' && zhihengMode && !state.skillUsed && selected.length > 0 && (
                         <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'zhiheng', pid: 0, cardIds: selected })}>
                           确认制衡（换 {selected.length} 张）
+                        </Button>
+                      )}
+                      {me.general.name === '华佗' && (
+                        <Button
+                          size="sm"
+                          variant={jijiu ? 'default' : 'secondary'}
+                          onClick={() => { setJijiu(!jijiu); setAwaitingTarget(null); setHint(jijiu ? '' : '急救模式：点击任意红色手牌当【桃】回血') }}
+                        >
+                          急救·红牌当桃{jijiu ? '·开' : ''}
+                        </Button>
+                      )}
+                      {me.general.name === '黄盖' && me.hp > 1 && (
+                        <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'kuro', pid: 0 })}>
+                          苦肉·失1血摸2牌
                         </Button>
                       )}
                     </>
