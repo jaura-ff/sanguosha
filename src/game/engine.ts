@@ -3,9 +3,9 @@
 
 export type Suit = '♠' | '♥' | '♣' | '♦'
 export type CardName =
-  | '杀' | '闪' | '桃' | '酒'
-  | '无中生有' | '决斗' | '南蛮入侵' | '万箭齐发' | '过河拆桥' | '顺手牵羊' | '桃园结义' | '乐不思蜀' | '兵粮寸断'
-  | '诸葛连弩' | '青釭剑' | '青龙偃月刀' | '古锭刀' | '八卦阵' | '仁王盾' | '白银狮子' | '的卢' | '赤兔'
+  | '杀' | '火杀' | '闪' | '桃' | '酒'
+  | '无中生有' | '决斗' | '南蛮入侵' | '万箭齐发' | '过河拆桥' | '顺手牵羊' | '桃园结义' | '乐不思蜀' | '兵粮寸断' | '闪电'
+  | '诸葛连弩' | '青釭剑' | '青龙偃月刀' | '古锭刀' | '八卦阵' | '仁王盾' | '藤甲' | '白银狮子' | '的卢' | '赤兔'
 
 export type CardKind = 'basic' | 'trick' | 'equip'
 export type EquipSlot = 'weapon' | 'armor' | 'plus' | 'minus'
@@ -90,6 +90,7 @@ export function buildDeck(): Card[] {
   const cards: Card[] = []
   const suits: Suit[] = ['♠', '♥', '♣', '♦']
   for (let i = 0; i < 24; i++) cards.push(mk('杀', suits[i % 4], 'basic'))
+  for (let i = 0; i < 4; i++) cards.push(mk('火杀', i % 2 ? '♥' : '♦', 'basic'))
   for (let i = 0; i < 12; i++) cards.push(mk('闪', i % 2 ? '♥' : '♦', 'basic'))
   for (let i = 0; i < 6; i++) cards.push(mk('桃', i % 2 ? '♥' : '♦', 'basic'))
   for (let i = 0; i < 3; i++) cards.push(mk('酒', i === 0 ? '♥' : i === 1 ? '♦' : '♠', 'basic'))
@@ -102,6 +103,7 @@ export function buildDeck(): Card[] {
   cards.push(mk('桃园结义', '♥', 'trick'))
   for (let i = 0; i < 2; i++) cards.push(mk('乐不思蜀', '♥', 'trick'))
   for (let i = 0; i < 2; i++) cards.push(mk('兵粮寸断', i % 2 ? '♣' : '♠', 'trick'))
+  cards.push(mk('闪电', '♠', 'trick'))
   // 装备
   cards.push(mk('诸葛连弩', '♣', 'equip', 'weapon', 1))
   cards.push(mk('青釭剑', '♠', 'equip', 'weapon', 2))
@@ -109,6 +111,7 @@ export function buildDeck(): Card[] {
   cards.push(mk('古锭刀', '♠', 'equip', 'weapon', 2))
   cards.push(mk('八卦阵', '♠', 'equip', 'armor'))
   cards.push(mk('仁王盾', '♣', 'equip', 'armor'))
+  cards.push(mk('藤甲', '♣', 'equip', 'armor'))
   cards.push(mk('白银狮子', '♣', 'equip', 'armor'))
   cards.push(mk('八卦阵', '♣', 'equip', 'armor'))
   cards.push(mk('的卢', '♥', 'equip', 'plus'))
@@ -148,7 +151,7 @@ export function pname(s: GameState, pid: number): string {
 }
 
 export function canBeSha(p: Player, card: Card): boolean {
-  if (card.name === '杀') return true
+  if (card.name === '杀' || card.name === '火杀') return true
   if (p.general.name === '关羽' && card.color === 'red') return true
   if (p.general.name === '赵云' && card.name === '闪') return true
   return false
@@ -373,6 +376,16 @@ function startTurn(s: GameState, pid: number) {
         say(s, `${pname(s, pid)} 的【兵粮寸断】判定为 ${flip ? flip.suit : '?'}，跳过摸牌阶段！`)
         skipDraw = true
       }
+    } else if (jc.name === '闪电') {
+      if (flip && flip.suit === '♠') {
+        s.discardPile.push(jc)
+        say(s, `${pname(s, pid)} 的【闪电】判定为 ${flip.suit}，遭雷击受到 2 点伤害！`)
+        damage(s, pid, 2, null)
+        if (s.pending) return // 雷击触发濒死，中断判定与摸牌
+      } else {
+        say(s, `${pname(s, pid)} 的【闪电】判定为 ${flip ? flip.suit : '?'}，转移给下家`)
+        s.players[nextAlive(s, pid)].judge.push(jc)
+      }
     }
   }
 
@@ -458,10 +471,10 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     return s
   }
 
-  // 是否按【杀】处理：杀本体；赵云的闪；关羽的闪；或关羽显式用武圣转化红牌。
+  // 是否按【杀】处理：杀/火杀本体；赵云的闪；关羽的闪；或关羽显式用武圣转化红牌。
   // 其他红牌（桃/锦囊）默认按牌面功能使用，避免被武圣劫持。
   const asSha =
-    card.name === '杀' ||
+    card.name === '杀' || card.name === '火杀' ||
     ((p.general.name === '赵云' || p.general.name === '关羽') && card.name === '闪') ||
     (p.general.name === '关羽' && card.color === 'red' && !!asShaFlag)
 
@@ -480,13 +493,19 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     if (!unlimitedSha(p) && s.shaUsed >= 1) { say(s, '每回合只能使用一张【杀】'); return s }
     const t = s.players[targetId!]
     const ignoreArmor = p.equip.weapon?.name === '青釭剑'
+    // 藤甲：免疫普通【杀】（青釭剑无视防具）；火杀不受藤甲免疫，反而伤害 +1
+    if (!ignoreArmor && t.equip.armor?.name === '藤甲' && card.name !== '火杀') {
+      use(card, targetId)
+      say(s, `${pname(s, targetId!)} 的【藤甲】免疫了普通【杀】`)
+      return s
+    }
     // 仁王盾：黑色【杀】无效（青釭剑无视防具）
     if (!ignoreArmor && t.equip.armor?.name === '仁王盾' && card.color === 'black') {
       use(card, targetId)
       say(s, `${pname(s, targetId!)} 的【仁王盾】免疫了黑色【杀】`)
       return s
     }
-    // 伤害结算：酒加成、古锭刀对空手牌目标加成
+    // 伤害结算：酒加成、古锭刀对空手牌目标加成、火杀对藤甲目标加成
     let dmg = 1
     if (s.jiuUsed) {
       s.jiuUsed = false
@@ -496,6 +515,10 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     if (p.equip.weapon?.name === '古锭刀' && t.hand.length === 0) {
       dmg++
       say(s, `${pname(s, pid)} 的【古锭刀】对空手牌目标伤害 +1`)
+    }
+    if (card.name === '火杀' && t.equip.armor?.name === '藤甲') {
+      dmg++
+      say(s, `${pname(s, targetId!)} 的【藤甲】遇火，伤害 +1`)
     }
     s.shaUsed++
     use(card, targetId)
@@ -584,6 +607,15 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
       s.players[targetId!].judge.push(card)
       s.lastPlayed = { pid, card, target: targetId }
       say(s, `${pname(s, pid)} 对 ${pname(s, targetId!)} 使用【乐不思蜀】`)
+      jizhi(s, pid)
+      return s
+    }
+    case '闪电': {
+      if (p.judge.some((x) => x.name === '闪电')) { say(s, '判定区已有【闪电】'); return s }
+      removeCard(p, card.id)
+      p.judge.push(card)
+      s.lastPlayed = { pid, card, target: pid }
+      say(s, `${pname(s, pid)} 使用【闪电】，置于自己判定区`)
       jizhi(s, pid)
       return s
     }

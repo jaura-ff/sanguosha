@@ -609,7 +609,7 @@ export default function App() {
 
   // 该牌点击后是否按【杀】处理（与引擎 asSha 规则一致）
   const isShaLike = (card: Card): boolean =>
-    card.name === '杀' ||
+    card.name === '杀' || card.name === '火杀' ||
     ((me.general.name === '赵云' || me.general.name === '关羽') && card.name === '闪') ||
     (wusheng && me.general.name === '关羽' && card.color === 'red' && card.kind !== 'equip')
 
@@ -635,6 +635,7 @@ export default function App() {
         const ok = state.players.some((p) => p.alive && p.id !== 0 && distance(state, 0, p.id) === 1)
         return ok ? null : '【兵粮寸断】只能对距离 1 的角色使用'
       }
+      case '闪电': return me.judge.some((x) => x.name === '闪电') ? '判定区已有【闪电】' : null
       default: return null
     }
   }
@@ -703,7 +704,7 @@ export default function App() {
     if (targetable(state.players[pid])) {
       const card = me.hand.find((c) => c.id === awaitingTarget)
       const asSha =
-        card && card.name !== '杀' && card.name !== '闪' &&
+        card && card.name !== '杀' && card.name !== '火杀' && card.name !== '闪' &&
         me.general.name === '关羽' && card.color === 'red' && card.kind !== 'equip'
       dispatch({ type: 'play', pid: 0, cardId: awaitingTarget!, targetId: pid, asSha: asSha || undefined })
     }

@@ -134,6 +134,8 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
     if (canSha) {
       const real = p.hand.find((x) => x.name === '杀')
       if (real) return { type: 'play', pid: p.id, cardId: real.id, targetId: rangeTarget }
+      const fire = p.hand.find((x) => x.name === '火杀')
+      if (fire) return { type: 'play', pid: p.id, cardId: fire.id, targetId: rangeTarget }
       const shan = (p.general.name === '赵云' || p.general.name === '关羽') && p.hand.find((x) => x.name === '闪')
       if (shan) return { type: 'play', pid: p.id, cardId: shan.id, targetId: rangeTarget }
       if (p.general.name === '关羽') {
@@ -164,6 +166,11 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
     if (bing && distance(s, p.id, anyTarget) === 1 && !t.judge.some((x) => x.name === '兵粮寸断')) {
       return { type: 'play', pid: p.id, cardId: bing.id, targetId: anyTarget }
     }
+    // 2.8c 闪电（自己判定区无闪电时使用，制造压力）
+    const shandian = p.hand.find((x) => x.name === '闪电')
+    if (shandian && !p.judge.some((x) => x.name === '闪电') && difficulty !== 'easy') {
+      return { type: 'play', pid: p.id, cardId: shandian.id }
+    }
     // 2.9 顺手牵羊（距离 1）
     const shun = p.hand.find((x) => x.name === '顺手牵羊')
     if (shun && distance(s, p.id, anyTarget) === 1 && hasCards(t)) {
@@ -188,7 +195,9 @@ function discardRank(card: { name: string; kind: string }): number {
     case '闪': return 80
     case '无中生有': return 60
     case '杀': return 40
+    case '火杀': return 40
     case '酒': return 30
+    case '闪电': return 25
     default: return 20
   }
 }
