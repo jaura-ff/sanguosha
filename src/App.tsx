@@ -327,6 +327,7 @@ export default function App() {
   const [awaitingTarget, setAwaitingTarget] = useState<number | null>(null)
   const [hint, setHint] = useState('')
   const [wusheng, setWusheng] = useState(false) // 关羽：红牌当杀模式
+  const [zhihengMode, setZhihengMode] = useState(false) // 孙权：制衡选牌模式
   // 桌面端「小窗 / 全屏」显示模式，仅 md 以上生效，选择会被记住
   const [compact, setCompact] = useState(() => {
     try { return localStorage.getItem('sgs:compact') === '1' } catch { return false }
@@ -455,6 +456,7 @@ export default function App() {
     setAwaitingTarget(null)
     setHint('')
     setWusheng(false)
+    setZhihengMode(false)
     if (tipTimer.current) clearTimeout(tipTimer.current)
     setHoverTip(null)
   }
@@ -496,6 +498,7 @@ export default function App() {
     setAwaitingTarget(null)
     setHint('')
     setWusheng(false)
+    setZhihengMode(false)
     setHoverTip(null)
   }
 
@@ -621,7 +624,7 @@ export default function App() {
       return
     }
     if (!myTurn) { setHint('还没到你的回合'); return }
-    if (selected.length > 0 && me.general.name === '孙权' && !state.skillUsed) {
+    if (zhihengMode && me.general.name === '孙权' && !state.skillUsed) {
       setSelected((prev) =>
         prev.includes(card.id) ? prev.filter((x) => x !== card.id) : [...prev, card.id],
       )
@@ -887,9 +890,23 @@ export default function App() {
                           武圣·红牌当杀{wusheng ? '·开' : ''}
                         </Button>
                       )}
-                      {me.general.name === '孙权' && !state.skillUsed && selected.length > 0 && (
+                      {me.general.name === '孙权' && !state.skillUsed && (
+                        <Button
+                          size="sm"
+                          variant={zhihengMode ? 'default' : 'secondary'}
+                          onClick={() => {
+                            setZhihengMode((v) => !v)
+                            setSelected([])
+                            setAwaitingTarget(null)
+                            setHint(zhihengMode ? '' : '制衡：点击要弃置的手牌，再点「确认制衡」')
+                          }}
+                        >
+                          制衡{zhihengMode ? '·选牌中' : ''}
+                        </Button>
+                      )}
+                      {me.general.name === '孙权' && zhihengMode && !state.skillUsed && selected.length > 0 && (
                         <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'zhiheng', pid: 0, cardIds: selected })}>
-                          制衡（换 {selected.length} 张）
+                          确认制衡（换 {selected.length} 张）
                         </Button>
                       )}
                     </>
