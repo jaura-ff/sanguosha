@@ -77,7 +77,8 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
   if (!p || p.isHuman || !p.alive) return null
 
   if (s.phase === 'discard') {
-    const need = p.hand.length - p.hp
+    const limit = p.hp + (p.general.name === '周瑜' ? 1 : 0)
+    const need = p.hand.length - limit
     if (need <= 0) return { type: 'discard', pid: p.id, cardIds: [] }
     const sorted = [...p.hand].sort((a, b) => discardRank(a) - discardRank(b))
     return { type: 'discard', pid: p.id, cardIds: sorted.slice(0, need).map((x) => x.id) }
@@ -113,6 +114,14 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
   if (p.general.name === '孙权' && !s.skillUsed) {
     const junk = p.hand.filter((x) => !canBeShan(p, x) && x.name !== '桃' && !canBeSha(p, x) && x.kind !== 'equip')
     if (junk.length >= 2) return { type: 'zhiheng', pid: p.id, cardIds: junk.map((x) => x.id) }
+  }
+  // 2.4b 曹仁【据守】：手牌较多时摸3结束回合（用于存牌）
+  if (p.general.name === '曹仁' && !s.skillUsed && p.hand.length >= 3) {
+    return { type: 'jushou', pid: p.id }
+  }
+  // 2.4c 刘备【仁德】：残血时弃2手牌回1血
+  if (p.general.name === '刘备' && !s.skillUsed && p.hp < p.general.maxHp && p.hand.length >= 2) {
+    return { type: 'rende', pid: p.id, cardIds: p.hand.slice(0, 2).map((x) => x.id) }
   }
 
   const rangeTarget = pickTarget(s, p, true, difficulty)
@@ -179,6 +188,16 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
     // 2.10 过河拆桥
     const chai = p.hand.find((x) => x.name === '过河拆桥')
     if (chai && hasCards(t)) return { type: 'play', pid: p.id, cardId: chai.id, targetId: anyTarget }
+    // 2.10b 甘宁【奇袭】：黑色手牌当过河拆桥
+    if (p.general.name === '甘宁' && hasCards(t)) {
+      const black = p.hand.find((x) => x.color === 'black' && x.kind !== 'equip' && x.name !== '杀' && x.name !== '火杀')
+      if (black) return { type: 'play', pid: p.id, cardId: black.id, targetId: anyTarget, asChai: true }
+    }
+    // 2.10c 大乔【国色】：方块手牌当乐不思蜀
+    if (p.general.name === '大乔' && !t.judge.some((x) => x.name === '乐不思蜀')) {
+      const diamond = p.hand.find((x) => x.suit === '♦' && x.kind !== 'equip')
+      if (diamond) return { type: 'play', pid: p.id, cardId: diamond.id, targetId: anyTarget, asLe: true }
+    }
     // 2.11 桃园结义（自己或主公残血时）
     const tao2 = p.hand.find((x) => x.name === '桃园结义')
     const lord = s.players.find((x) => x.alive && x.identity === '主公')

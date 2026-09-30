@@ -376,6 +376,10 @@ export default function App() {
   const [wusheng, setWusheng] = useState(false) // 关羽：红牌当杀模式
   const [zhihengMode, setZhihengMode] = useState(false) // 孙权：制衡选牌模式
   const [jijiu, setJijiu] = useState(false) // 华佗：红牌当桃模式
+  const [qixi, setQixi] = useState(false) // 甘宁：黑牌当过河拆桥模式
+  const [guose, setGuose] = useState(false) // 大乔：方块当乐不思蜀模式
+  const [guhuo, setGuhuo] = useState(false) // 于吉：任意牌当桃模式
+  const [rendeMode, setRendeMode] = useState(false) // 刘备：仁德选牌模式
   // 桌面端「小窗 / 全屏」显示模式，仅 md 以上生效，选择会被记住
   const [compact, setCompact] = useState(() => {
     try { return localStorage.getItem('sgs:compact') === '1' } catch { return false }
@@ -506,6 +510,10 @@ export default function App() {
     setWusheng(false)
     setZhihengMode(false)
     setJijiu(false)
+    setQixi(false)
+    setGuose(false)
+    setGuhuo(false)
+    setRendeMode(false)
     if (tipTimer.current) clearTimeout(tipTimer.current)
     setHoverTip(null)
   }
@@ -549,6 +557,10 @@ export default function App() {
     setWusheng(false)
     setZhihengMode(false)
     setJijiu(false)
+    setQixi(false)
+    setGuose(false)
+    setGuhuo(false)
+    setRendeMode(false)
     setHoverTip(null)
   }
 
@@ -618,7 +630,8 @@ export default function App() {
     if (card.kind === 'equip') return null
     if (isShaLike(card)) {
       const unlimited = me.general.name === '张飞' || me.equip.weapon?.name === '诸葛连弩'
-      if (!unlimited && state.shaUsed >= 1) return '每回合限一张【杀】（张飞/诸葛连弩可无限制）'
+      const limit = me.general.name === '夏侯渊' ? 2 : 1
+      if (!unlimited && state.shaUsed >= limit) return `每回合限 ${limit} 张【杀】（张飞/诸葛连弩可无限制）`
       const hasTarget = state.players.some((p) => p.alive && p.id !== 0 && inRange(state, 0, p.id))
       if (!hasTarget) return `攻击范围 ${attackRange(me)} 内没有目标（装备武器或−1马扩大范围）`
       return null
@@ -651,11 +664,20 @@ export default function App() {
   }
 
   const needsTarget = (card: Card): boolean =>
-    isShaLike(card) || ['决斗', '过河拆桥', '顺手牵羊', '乐不思蜀', '兵粮寸断'].includes(card.name)
+    isShaLike(card) || ['决斗', '过河拆桥', '顺手牵羊', '乐不思蜀', '兵粮寸断'].includes(card.name) || isQixiCard(card) || isGuoseCard(card)
 
-  // 华佗【急救】：开启 jijiu 后，红色非装备牌可当【桃】使用（主动回血）
+  // 华佗【急救】/于吉【蛊惑】：开启后红色牌（华佗）或任意牌（于吉）可当【桃】使用
   const isJijiuCard = (card: Card): boolean =>
-    me.general.name === '华佗' && jijiu && card.color === 'red' && card.kind !== 'equip'
+    (me.general.name === '华佗' && jijiu && card.color === 'red' && card.kind !== 'equip') ||
+    (me.general.name === '于吉' && guhuo && card.kind !== 'equip')
+
+  // 甘宁【奇袭】：黑牌当过河拆桥
+  const isQixiCard = (card: Card): boolean =>
+    me.general.name === '甘宁' && qixi && card.color === 'black' && card.kind !== 'equip' && card.name !== '杀' && card.name !== '火杀'
+
+  // 大乔【国色】：方块当乐不思蜀
+  const isGuoseCard = (card: Card): boolean =>
+    me.general.name === '大乔' && guose && card.suit === '♦' && card.kind !== 'equip'
 
   const targetable = (p: Player): boolean => {
     if (awaitingTarget === null || !myTurn || p.id === 0 || !p.alive) return false
@@ -680,11 +702,27 @@ export default function App() {
     }
     if (!myTurn) { setHint('还没到你的回合'); return }
     if (isJijiuCard(card)) {
-      if (me.hp >= me.general.maxHp) { setHint('体力已满，无法使用【急救】'); return }
+      if (me.hp >= me.general.maxHp) { setHint('体力已满，无法使用'); return }
       dispatch({ type: 'play', pid: 0, cardId: card.id, asTao: true })
       return
     }
+    if (isQixiCard(card)) {
+      setAwaitingTarget(card.id)
+      setHint('奇袭：请点击一名有牌的对手（当过河拆桥）')
+      return
+    }
+    if (isGuoseCard(card)) {
+      setAwaitingTarget(card.id)
+      setHint('国色：请点击一名对手（当乐不思蜀）')
+      return
+    }
     if (zhihengMode && me.general.name === '孙权' && !state.skillUsed) {
+      setSelected((prev) =>
+        prev.includes(card.id) ? prev.filter((x) => x !== card.id) : [...prev, card.id],
+      )
+      return
+    }
+    if (rendeMode && me.general.name === '刘备' && !state.skillUsed) {
       setSelected((prev) =>
         prev.includes(card.id) ? prev.filter((x) => x !== card.id) : [...prev, card.id],
       )
@@ -706,7 +744,9 @@ export default function App() {
       const asSha =
         card && card.name !== '杀' && card.name !== '火杀' && card.name !== '闪' &&
         me.general.name === '关羽' && card.color === 'red' && card.kind !== 'equip'
-      dispatch({ type: 'play', pid: 0, cardId: awaitingTarget!, targetId: pid, asSha: asSha || undefined })
+      const asChai = card ? isQixiCard(card) : false
+      const asLe = card ? isGuoseCard(card) : false
+      dispatch({ type: 'play', pid: 0, cardId: awaitingTarget!, targetId: pid, asSha: asSha || undefined, asChai: asChai || undefined, asLe: asLe || undefined })
     }
   }
 
@@ -938,7 +978,8 @@ export default function App() {
               <div className="flex-1">
                 <div className="flex flex-wrap justify-center gap-1 py-1 min-h-20 max-h-28 overflow-y-auto sm:gap-1.5 sm:min-h-24 sm:max-h-40">
                   {me.hand.map((card) => {
-                    const blocked = myTurn && !myPending ? playBlockReason(card) !== null : false
+                    const skillCard = isJijiuCard(card) || isQixiCard(card) || isGuoseCard(card)
+                    const blocked = myTurn && !myPending && !skillCard ? playBlockReason(card) !== null : false
                     const pendingDisabled = myPending ? !usableForPending(card) : false
                     return (
                       <CardView
@@ -994,10 +1035,58 @@ export default function App() {
                           急救·红牌当桃{jijiu ? '·开' : ''}
                         </Button>
                       )}
+                      {me.general.name === '于吉' && (
+                        <Button
+                          size="sm"
+                          variant={guhuo ? 'default' : 'secondary'}
+                          onClick={() => { setGuhuo(!guhuo); setAwaitingTarget(null); setHint(guhuo ? '' : '蛊惑模式：点击任意手牌当【桃】回血') }}
+                        >
+                          蛊惑·任意牌当桃{guhuo ? '·开' : ''}
+                        </Button>
+                      )}
+                      {me.general.name === '甘宁' && (
+                        <Button
+                          size="sm"
+                          variant={qixi ? 'default' : 'secondary'}
+                          onClick={() => { setQixi(!qixi); setAwaitingTarget(null); setHint(qixi ? '' : '奇袭模式：点击任意黑色手牌当过河拆桥') }}
+                        >
+                          奇袭·黑牌当拆{qixi ? '·开' : ''}
+                        </Button>
+                      )}
+                      {me.general.name === '大乔' && (
+                        <Button
+                          size="sm"
+                          variant={guose ? 'default' : 'secondary'}
+                          onClick={() => { setGuose(!guose); setAwaitingTarget(null); setHint(guose ? '' : '国色模式：点击任意方块手牌当乐不思蜀') }}
+                        >
+                          国色·方块当乐{guose ? '·开' : ''}
+                        </Button>
+                      )}
                       {me.general.name === '黄盖' && me.hp > 1 && (
                         <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'kuro', pid: 0 })}>
                           苦肉·失1血摸2牌
                         </Button>
+                      )}
+                      {me.general.name === '曹仁' && !state.skillUsed && (
+                        <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'jushou', pid: 0 })}>
+                          据守·摸3牌结束回合
+                        </Button>
+                      )}
+                      {me.general.name === '刘备' && !state.skillUsed && me.hp < me.general.maxHp && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant={rendeMode ? 'default' : 'secondary'}
+                            onClick={() => { setRendeMode((v) => !v); setSelected([]); setAwaitingTarget(null); setHint(rendeMode ? '' : '仁德：点击要弃置的 2 张手牌，再点「确认仁德」') }}
+                          >
+                            仁德{rendeMode ? '·选牌中' : ''}
+                          </Button>
+                          {rendeMode && selected.length === 2 && (
+                            <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'rende', pid: 0, cardIds: selected })}>
+                              确认仁德（回1血）
+                            </Button>
+                          )}
+                        </>
                       )}
                     </>
                   )}

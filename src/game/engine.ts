@@ -40,6 +40,7 @@ export interface Player {
   alive: boolean
   isHuman: boolean
   identityRevealed: boolean
+  budiUsed?: boolean // 周泰【不屈】：首次濒死免死标记
 }
 
 export type Pending =
@@ -60,6 +61,7 @@ export interface GameState {
   log: string[]
   shaUsed: number
   jiuUsed: boolean // 本回合是否已使用过【酒】（下一张杀伤害 +1）
+  luoyi: boolean // 许褚【裸衣】：本回合【杀】伤害 +1
   skillUsed: boolean
   winner: string | null
   lastPlayed: { pid: number; card: Card; target?: number } | null
@@ -82,6 +84,27 @@ export const GENERALS: General[] = [
   { name: '诸葛亮', skill: '观星', skillDesc: '摸牌阶段多摸 1 张牌（共 3 张）', maxHp: 3 },
   { name: '司马懿', skill: '反馈', skillDesc: '受到伤害时，从伤害来源获得一张牌', maxHp: 3 },
   { name: '周瑜', skill: '英姿', skillDesc: '摸牌阶段多摸 1 张牌，且手牌上限 +1', maxHp: 3 },
+  { name: '夏侯惇', skill: '刚烈', skillDesc: '受到伤害后判定，若不为红桃，伤害来源受到 1 点伤害', maxHp: 4 },
+  { name: '张辽', skill: '突袭', skillDesc: '摸牌阶段，改为从两名其他角色各获得 1 张牌', maxHp: 4 },
+  { name: '许褚', skill: '裸衣', skillDesc: '摸牌阶段少摸 1 张，本回合你的【杀】伤害 +1', maxHp: 4 },
+  { name: '甄姬', skill: '洛神·倾国', skillDesc: '摸牌阶段判定，黑色牌全部获得直到红色；黑色手牌可当【闪】', maxHp: 3 },
+  { name: '曹仁', skill: '据守', skillDesc: '出牌阶段限一次，摸 3 张牌并结束本回合', maxHp: 4 },
+  { name: '夏侯渊', skill: '神速', skillDesc: '每回合可使用 2 张【杀】', maxHp: 4 },
+  { name: '刘备', skill: '仁德', skillDesc: '出牌阶段限一次，弃 2 张手牌回复 1 点体力', maxHp: 4 },
+  { name: '黄忠', skill: '烈弓', skillDesc: '你的【杀】无法被【闪】抵消', maxHp: 4 },
+  { name: '魏延', skill: '狂骨', skillDesc: '对距离 1 的角色造成伤害后，回复 1 点体力', maxHp: 3 },
+  { name: '甘宁', skill: '奇袭', skillDesc: '黑色手牌可当【过河拆桥】使用', maxHp: 4 },
+  { name: '吕蒙', skill: '克己', skillDesc: '本回合未出【杀】则跳过弃牌阶段', maxHp: 4 },
+  { name: '大乔', skill: '国色', skillDesc: '方块手牌可当【乐不思蜀】使用', maxHp: 3 },
+  { name: '陆逊', skill: '连营', skillDesc: '失去最后一张手牌时，摸 1 张牌', maxHp: 3 },
+  { name: '孙尚香', skill: '枭姬', skillDesc: '更换装备时，摸 2 张牌', maxHp: 3 },
+  { name: '小乔', skill: '天香', skillDesc: '受到伤害时，弃 1 张红桃牌可将伤害转移给他人', maxHp: 3 },
+  { name: '周泰', skill: '不屈', skillDesc: '第一次濒死时免死，回复至 1 点体力', maxHp: 4 },
+  { name: '貂蝉', skill: '闭月', skillDesc: '结束阶段摸 1 张牌', maxHp: 3 },
+  { name: '张角', skill: '雷击', skillDesc: '打出【闪】后，对【杀】来源造成 1 点伤害', maxHp: 3 },
+  { name: '于吉', skill: '蛊惑', skillDesc: '任意手牌可当【桃】使用', maxHp: 3 },
+  { name: '神关羽', skill: '武魂', skillDesc: '阵亡时，对所有其他角色造成 1 点伤害', maxHp: 4 },
+  { name: '神吕蒙', skill: '涉猎', skillDesc: '摸牌阶段多摸 1 张牌（共 3 张）', maxHp: 4 },
 ]
 
 let cardSeq = 1
@@ -167,13 +190,15 @@ export function canBeSha(p: Player, card: Card): boolean {
 export function canBeShan(p: Player, card: Card): boolean {
   if (card.name === '闪') return true
   if (p.general.name === '赵云' && card.name === '杀') return true
+  if (p.general.name === '甄姬' && card.color === 'black' && card.kind !== 'equip') return true
   return false
 }
 
-// 是否可当【桃】使用：桃本体，或华佗的红色牌（急救）
+// 是否可当【桃】使用：桃本体，华佗红牌（急救），或于吉任意牌（蛊惑）
 export function canBeTao(p: Player, card: Card): boolean {
   if (card.name === '桃') return true
   if (p.general.name === '华佗' && card.color === 'red' && card.kind !== 'equip') return true
+  if (p.general.name === '于吉' && card.kind !== 'equip') return true
   return false
 }
 
@@ -244,6 +269,11 @@ function unlimitedSha(p: Player): boolean {
   return p.general.name === '张飞' || p.equip.weapon?.name === '诸葛连弩'
 }
 
+// 每回合可用【杀】的上限：默认 1，夏侯渊【神速】为 2
+function shaLimit(p: Player): number {
+  return p.general.name === '夏侯渊' ? 2 : 1
+}
+
 // 手牌上限：默认等于体力，周瑜【英姿】+1
 function handLimit(p: Player): number {
   return p.hp + (p.general.name === '周瑜' ? 1 : 0)
@@ -275,6 +305,13 @@ function damage(s: GameState, target: number, n: number, source: number | null) 
   t.hp -= n
   say(s, `${pname(s, target)} 受到 ${n} 点伤害，体力 ${Math.max(t.hp, 0)}/${t.general.maxHp}`)
   if (t.hp <= 0) {
+    // 周泰【不屈】：首次濒死免死，回复至 1 点体力
+    if (t.general.name === '周泰' && !t.budiUsed) {
+      t.budiUsed = true
+      t.hp = 1
+      say(s, `${pname(s, target)} 发动【不屈】，免于一死，回复至 1 点体力`)
+      return
+    }
     const queue: number[] = []
     let i = s.current
     for (let k = 0; k < s.players.length; k++) {
@@ -310,6 +347,40 @@ function damage(s: GameState, target: number, n: number, source: number | null) 
       }
     }
   }
+  // 魏延【狂骨】：对距离 1 的角色造成伤害后回复 1 点体力
+  if (source !== null) {
+    const src = s.players[source]
+    if (src.alive && src.general.name === '魏延' && distance(s, source, target) === 1 && src.hp < src.general.maxHp) {
+      src.hp++
+      say(s, `${pname(s, source)} 发动【狂骨】，对距离 1 的角色造成伤害，回复 1 点体力`)
+    }
+  }
+  // 夏侯惇【刚烈】：受到伤害后判定，若非红桃，伤害来源受到 1 点伤害
+  if (t.general.name === '夏侯惇' && source !== null) {
+    const flip = drawOne(s)
+    if (flip) {
+      s.discardPile.push(flip)
+      if (flip.suit !== '♥') {
+        const src = s.players[source]
+        if (src.alive) {
+          say(s, `${pname(s, target)} 发动【刚烈】判定 ${flip.suit}（非红桃），对 ${pname(s, source)} 造成 1 点伤害`)
+          damage(s, source, 1, target)
+        }
+      } else {
+        say(s, `${pname(s, target)} 发动【刚烈】判定 ${flip.suit}（红桃），失效`)
+      }
+    }
+  }
+  // 小乔【天香】：受到伤害时弃 1 张红桃牌，将伤害转移给伤害来源
+  if (t.general.name === '小乔' && source !== null && s.players[source].alive && source !== target) {
+    const hongtao = t.hand.find((cd) => cd.suit === '♥')
+    if (hongtao) {
+      removeCard(t, hongtao.id)
+      s.discardPile.push(hongtao)
+      say(s, `${pname(s, target)} 发动【天香】弃【${hongtao.name}】，将伤害转移给 ${pname(s, source)}`)
+      damage(s, source, 1, target)
+    }
+  }
   void source
 }
 
@@ -325,6 +396,13 @@ function die(s: GameState, target: number) {
   t.judge = []
   t.equip = {}
   say(s, `${pname(s, target)} 阵亡，身份是【${t.identity}】`)
+  // 神关羽【武魂】：阵亡时对所有其他存活角色造成 1 点伤害
+  if (t.general.name === '神关羽') {
+    say(s, `${pname(s, target)} 发动【武魂】，对所有其他角色造成 1 点伤害`)
+    for (const pl of s.players) {
+      if (pl.alive && pl.id !== target) damage(s, pl.id, 1, target)
+    }
+  }
   checkWin(s)
 }
 
@@ -358,6 +436,7 @@ export function newGame(opts?: { humanGeneral?: General | null }): GameState {
     alive: true,
     isHuman: id === 0,
     identityRevealed: identities[id] === '主公',
+    budiUsed: false,
   }))
   const lordId = players.find((p) => p.identity === '主公')!.id
   const s: GameState = {
@@ -370,6 +449,7 @@ export function newGame(opts?: { humanGeneral?: General | null }): GameState {
     log: [],
     shaUsed: 0,
     jiuUsed: false,
+    luoyi: false,
     skillUsed: false,
     winner: null,
     lastPlayed: null,
@@ -385,6 +465,7 @@ function startTurn(s: GameState, pid: number) {
   s.phase = 'play'
   s.shaUsed = 0
   s.jiuUsed = false
+  s.luoyi = false
   s.skillUsed = false
   const p = s.players[pid]
 
@@ -425,10 +506,56 @@ function startTurn(s: GameState, pid: number) {
   }
 
   if (!skipDraw) {
-    const drawN = 2 + (p.general.name === '诸葛亮' || p.general.name === '周瑜' ? 1 : 0)
-    drawCards(s, pid, drawN)
-    if (drawN > 2) say(s, `${pname(s, pid)} 发动【${p.general.name === '诸葛亮' ? '观星' : '英姿'}】多摸 1 张牌`)
-    say(s, `—— ${pname(s, pid)} 的回合，摸 ${drawN} 张牌 ——`)
+    // 甄姬【洛神】：摸牌阶段开始判定，黑色牌全部获得直到红色（额外获得）
+    if (p.general.name === '甄姬') {
+      let luoshenCount = 0
+      for (let k = 0; k < 30; k++) {
+        const flip = drawOne(s)
+        if (!flip) break
+        if (flip.color === 'black') {
+          p.hand.push(flip)
+          luoshenCount++
+        } else {
+          s.discardPile.push(flip)
+          break
+        }
+      }
+      if (luoshenCount > 0) say(s, `${pname(s, pid)} 发动【洛神】获得 ${luoshenCount} 张黑色牌`)
+    }
+    // 许褚【裸衣】：少摸 1 张，本回合杀伤害 +1
+    if (p.general.name === '许褚') {
+      s.luoyi = true
+      drawCards(s, pid, 1)
+      say(s, `${pname(s, pid)} 发动【裸衣】，本回合【杀】伤害 +1`)
+    }
+    // 张辽【突袭】：从两名其他角色各摸走 1 张
+    else if (p.general.name === '张辽') {
+      const victims = others(s, pid)
+      let stolen = 0
+      for (const v of victims) {
+        const vp = s.players[v]
+        const pool = vp.hand.length > 0 ? vp.hand : Object.values(vp.equip).filter(Boolean) as Card[]
+        if (pool.length > 0 && stolen < 2) {
+          const got = pool[Math.floor(Math.random() * pool.length)]
+          if (vp.hand.includes(got)) vp.hand = vp.hand.filter((cd) => cd.id !== got.id)
+          else {
+            for (const slot of ['weapon', 'armor', 'plus', 'minus'] as EquipSlot[]) {
+              if (vp.equip[slot] === got) delete vp.equip[slot]
+            }
+          }
+          p.hand.push(got)
+          stolen++
+        }
+      }
+      say(s, `${pname(s, pid)} 发动【突袭】，从 ${stolen} 名角色各获得 1 张牌`)
+    }
+    // 神吕蒙【涉猎】/诸葛亮【观星】/周瑜【英姿】：多摸 1 张
+    else {
+      const drawN = 2 + ((p.general.name === '诸葛亮' || p.general.name === '周瑜' || p.general.name === '神吕蒙') ? 1 : 0)
+      drawCards(s, pid, drawN)
+      if (drawN > 2) say(s, `${pname(s, pid)} 发动【${p.general.name === '诸葛亮' ? '观星' : p.general.name === '周瑜' ? '英姿' : '涉猎'}】多摸 1 张牌`)
+      say(s, `—— ${pname(s, pid)} 的回合，摸 ${drawN} 张牌 ——`)
+    }
   } else {
     say(s, `—— ${pname(s, pid)} 的回合，跳过摸牌 ——`)
   }
@@ -446,24 +573,28 @@ function startTurn(s: GameState, pid: number) {
 // ---------- Action ----------
 
 export type Action =
-  | { type: 'play'; pid: number; cardId: number; targetId?: number; asSha?: boolean; asTao?: boolean }
+  | { type: 'play'; pid: number; cardId: number; targetId?: number; asSha?: boolean; asTao?: boolean; asChai?: boolean; asLe?: boolean }
   | { type: 'endPlay'; pid: number }
   | { type: 'discard'; pid: number; cardIds: number[] }
   | { type: 'respond'; pid: number; cardId: number | null }
   | { type: 'quit' }
   | { type: 'zhiheng'; pid: number; cardIds: number[] }
   | { type: 'kuro'; pid: number }
+  | { type: 'jushou'; pid: number }
+  | { type: 'rende'; pid: number; cardIds: number[] }
   | { type: 'bagua'; pid: number }
 
 export function apply(prev: GameState, a: Action): GameState {
   const s = clone(prev)
   switch (a.type) {
-    case 'play': return doPlay(s, a.pid, a.cardId, a.targetId, a.asSha, a.asTao)
+    case 'play': return doPlay(s, a.pid, a.cardId, a.targetId, a.asSha, a.asTao, a.asChai, a.asLe)
     case 'endPlay': return doEndPlay(s, a.pid)
     case 'discard': return doDiscard(s, a.pid, a.cardIds)
     case 'respond': return doRespond(s, a.pid, a.cardId)
     case 'zhiheng': return doZhiheng(s, a.pid, a.cardIds)
     case 'kuro': return doKuro(s, a.pid)
+    case 'jushou': return doJushou(s, a.pid)
+    case 'rende': return doRende(s, a.pid, a.cardIds)
     case 'bagua': return doBagua(s, a.pid)
     case 'quit': {
       s.pending = null
@@ -476,7 +607,7 @@ export function apply(prev: GameState, a: Action): GameState {
   }
 }
 
-function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, asShaFlag?: boolean, asTaoFlag?: boolean): GameState {
+function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, asShaFlag?: boolean, asTaoFlag?: boolean, asChaiFlag?: boolean, asLeFlag?: boolean): GameState {
   if (s.pending || s.phase !== 'play' || s.current !== pid) return s
   const p = s.players[pid]
   const card = p.hand.find((cd) => cd.id === cardId)
@@ -495,6 +626,11 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     removeCard(p, c2.id)
     s.discardPile.push(c2)
     s.lastPlayed = { pid, card: c2, target }
+    // 陆逊【连营】：失去最后一张手牌时摸 1 张牌
+    if (p.general.name === '陆逊' && p.hand.length === 0) {
+      drawCards(s, pid, 1)
+      say(s, `${pname(s, pid)} 发动【连营】摸 1 张牌`)
+    }
   }
 
   // 装备牌
@@ -505,6 +641,11 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     p.equip[card.slot] = card
     s.lastPlayed = { pid, card }
     say(s, `${pname(s, pid)} 装备了【${card.name}】`)
+    // 孙尚香【枭姬】：更换装备时摸 2 张牌
+    if (p.general.name === '孙尚香' && old) {
+      drawCards(s, pid, 2)
+      say(s, `${pname(s, pid)} 发动【枭姬】摸 2 张牌`)
+    }
     return s
   }
 
@@ -515,19 +656,44 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     ((p.general.name === '赵云' || p.general.name === '关羽') && card.name === '闪') ||
     (p.general.name === '关羽' && card.color === 'red' && !!asShaFlag)
 
-  // 华佗【急救】：红牌当桃（需显式开启，主动给自己回血；濒死救人走响应）
+  // 华佗【急救】/于吉【蛊惑】：非桃当桃（需显式开启，主动给自己回血；濒死救人走响应）
   const asTao = canBeTao(p, card) && card.name !== '桃' && !!asTaoFlag
   if (asTao && !asSha) {
     if (p.hp >= p.general.maxHp) { say(s, '体力已满，无法使用【桃】'); return s }
     use(card, pid)
     p.hp++
-    say(s, `${pname(s, pid)} 发动【急救】，将【${card.name}】当【桃】使用，回复 1 点体力`)
+    say(s, `${pname(s, pid)} 发动【${p.general.name === '华佗' ? '急救' : '蛊惑'}】，将【${card.name}】当【桃】使用，回复 1 点体力`)
+    return s
+  }
+
+  // 甘宁【奇袭】：黑色手牌当【过河拆桥】（需显式开启）
+  if (p.general.name === '甘宁' && card.color === 'black' && card.kind !== 'equip' && card.name !== '杀' && card.name !== '火杀' && !!asChaiFlag) {
+    if (!validTarget(targetId, false)) return s
+    const t2 = s.players[targetId!]
+    const pool2 = targetCards(t2)
+    if (pool2.length === 0) { say(s, '对方没有可拆的牌'); return s }
+    use(card, targetId)
+    const got2 = stealRandom(s, t2, pool2)
+    s.discardPile.push(got2)
+    say(s, `${pname(s, pid)} 发动【奇袭】，将【${card.name}】当【过河拆桥】，拆掉【${got2.name}】`)
+    jizhi(s, pid)
+    return s
+  }
+
+  // 大乔【国色】：方块手牌当【乐不思蜀】（需显式开启）
+  if (p.general.name === '大乔' && card.suit === '♦' && card.kind !== 'equip' && !!asLeFlag) {
+    if (!validTarget(targetId, false)) return s
+    removeCard(p, card.id)
+    s.players[targetId!].judge.push(card)
+    s.lastPlayed = { pid, card, target: targetId }
+    say(s, `${pname(s, pid)} 发动【国色】，将【${card.name}】当【乐不思蜀】使用`)
+    jizhi(s, pid)
     return s
   }
 
   if (asSha) {
     if (!validTarget(targetId, true)) { say(s, '目标不在攻击范围内'); return s }
-    if (!unlimitedSha(p) && s.shaUsed >= 1) { say(s, '每回合只能使用一张【杀】'); return s }
+    if (!unlimitedSha(p) && s.shaUsed >= shaLimit(p)) { say(s, '每回合只能使用一张【杀】'); return s }
     const t = s.players[targetId!]
     const ignoreArmor = p.equip.weapon?.name === '青釭剑'
     // 是否视为火杀：火杀本体，或装备【朱雀羽扇】的普通【杀】
@@ -544,12 +710,17 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
       say(s, `${pname(s, targetId!)} 的【仁王盾】免疫了黑色【杀】`)
       return s
     }
-    // 伤害结算：酒加成、古锭刀对空手牌目标加成、火杀对藤甲目标加成
+    // 伤害结算：酒加成、古锭刀对空手牌目标加成、火杀对藤甲目标加成、许褚裸衣
     let dmg = 1
     if (s.jiuUsed) {
       s.jiuUsed = false
       dmg++
       say(s, `${pname(s, pid)} 的【酒】让本张【杀】伤害 +1`)
+    }
+    if (s.luoyi) {
+      s.luoyi = false
+      dmg++
+      say(s, `${pname(s, pid)} 的【裸衣】让本张【杀】伤害 +1`)
     }
     if (p.equip.weapon?.name === '古锭刀' && t.hand.length === 0) {
       dmg++
@@ -564,6 +735,12 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     say(s, `${pname(s, pid)} 对 ${pname(s, targetId!)} 使用【杀】`)
     if (p.general.name === '吕布') {
       say(s, `${pname(s, pid)} 的【无双】生效，目标需连续打出两张【闪】`)
+    }
+    // 黄忠【烈弓】：【杀】不可被【闪】抵消，直接造成伤害
+    if (p.general.name === '黄忠') {
+      say(s, `${pname(s, pid)} 的【烈弓】让【杀】无法被【闪】抵消`)
+      damage(s, targetId!, dmg, pid)
+      return s
     }
     s.pending = { kind: 'shan', source: pid, target: targetId!, damage: dmg, dodged: false }
     return s
@@ -719,6 +896,11 @@ function jizhi(s: GameState, pid: number) {
 function doEndPlay(s: GameState, pid: number): GameState {
   if (s.pending || s.current !== pid || s.phase !== 'play') return s
   const p = s.players[pid]
+  // 吕蒙【克己】：本回合未出【杀】则跳过弃牌阶段
+  if (p.general.name === '吕蒙' && s.shaUsed === 0) {
+    say(s, `${pname(s, pid)} 发动【克己】，本回合未出【杀】，跳过弃牌阶段`)
+    return endTurn(s, pid)
+  }
   if (p.hand.length > handLimit(p)) {
     s.phase = 'discard'
     say(s, `${pname(s, pid)} 需弃置 ${p.hand.length - handLimit(p)} 张牌`)
@@ -741,8 +923,39 @@ function doDiscard(s: GameState, pid: number, cardIds: number[]): GameState {
 }
 
 function endTurn(s: GameState, pid: number): GameState {
+  // 貂蝉【闭月】：结束阶段摸 1 张牌
+  if (s.players[pid].general.name === '貂蝉' && s.players[pid].alive) {
+    drawCards(s, pid, 1)
+    say(s, `${pname(s, pid)} 发动【闭月】摸 1 张牌`)
+  }
   const next = nextAlive(s, pid)
   startTurn(s, next)
+  return s
+}
+
+// 曹仁【据守】：摸 3 张牌，并结束本回合（跳过出牌/弃牌）
+function doJushou(s: GameState, pid: number): GameState {
+  if (s.pending || s.phase !== 'play' || s.current !== pid) return s
+  const p = s.players[pid]
+  if (p.general.name !== '曹仁' || s.skillUsed) return s
+  s.skillUsed = true
+  drawCards(s, pid, 3)
+  say(s, `${pname(s, pid)} 发动【据守】摸 3 张牌，结束本回合`)
+  return endTurn(s, pid)
+}
+
+// 刘备【仁德】：弃 2 张手牌回复 1 点体力
+function doRende(s: GameState, pid: number, cardIds: number[]): GameState {
+  if (s.pending || s.phase !== 'play' || s.current !== pid) return s
+  const p = s.players[pid]
+  if (p.general.name !== '刘备' || s.skillUsed || cardIds.length !== 2 || p.hp >= p.general.maxHp) return s
+  for (const id of cardIds) {
+    const cd = removeCard(p, id)
+    if (cd) s.discardPile.push(cd)
+  }
+  s.skillUsed = true
+  p.hp++
+  say(s, `${pname(s, pid)} 发动【仁德】弃 2 张牌，回复 1 点体力（${p.hp}/${p.general.maxHp}）`)
   return s
 }
 
@@ -819,6 +1032,11 @@ function doRespond(s: GameState, pid: number, cardId: number | null): GameState 
       }
       say(s, `${pname(s, pid)} 打出【闪】抵消了【杀】`)
       s.pending = null
+      // 张角【雷击】：打出【闪】后对【杀】来源造成 1 点伤害
+      if (p.general.name === '张角' && pd.source !== null && s.players[pd.source].alive) {
+        say(s, `${pname(s, pid)} 发动【雷击】，对 ${pname(s, pd.source)} 造成 1 点伤害`)
+        damage(s, pd.source, 1, pid)
+      }
       // 青龙偃月刀：杀被闪后可再出一张
       const src = s.players[pd.source]
       if (src.equip.weapon?.name === '青龙偃月刀' && s.shaUsed > 0) {
@@ -881,8 +1099,9 @@ function doRespond(s: GameState, pid: number, cardId: number | null): GameState 
       s.discardPile.push(card)
       const t = s.players[pd.target]
       t.hp++
-      const isJijiu = card.name !== '桃'
-      say(s, `${pname(s, pid)} ${isJijiu ? `发动【急救】将【${card.name}】当【桃】` : '使用【桃】'}，${pname(s, pd.target)} 体力回复至 ${t.hp}`)
+      const isConverted = card.name !== '桃'
+      const skillName = p.general.name === '华佗' ? '急救' : p.general.name === '于吉' ? '蛊惑' : ''
+      say(s, `${pname(s, pid)} ${isConverted ? `发动【${skillName}】将【${card.name}】当【桃】` : '使用【桃】'}，${pname(s, pd.target)} 体力回复至 ${t.hp}`)
       if (t.hp > 0) {
         s.pending = null
         say(s, `${pname(s, pd.target)} 脱离濒死`)
