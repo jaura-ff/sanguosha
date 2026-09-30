@@ -573,9 +573,14 @@ export default function App() {
     switch (card.name) {
       case '闪': return '【闪】不能主动打出，用于响应【杀】'
       case '桃': return me.hp >= me.general.maxHp ? '体力已满，【桃】留到受伤或救人时用' : null
+      case '酒': return state.jiuUsed ? '本回合已使用过【酒】' : null
       case '顺手牵羊': {
         const ok = state.players.some((p) => p.alive && p.id !== 0 && distance(state, 0, p.id) === 1)
         return ok ? null : '【顺手牵羊】只能对距离 1 的角色使用'
+      }
+      case '兵粮寸断': {
+        const ok = state.players.some((p) => p.alive && p.id !== 0 && distance(state, 0, p.id) === 1)
+        return ok ? null : '【兵粮寸断】只能对距离 1 的角色使用'
       }
       default: return null
     }
@@ -592,14 +597,14 @@ export default function App() {
   }
 
   const needsTarget = (card: Card): boolean =>
-    isShaLike(card) || ['决斗', '过河拆桥', '顺手牵羊', '乐不思蜀'].includes(card.name)
+    isShaLike(card) || ['决斗', '过河拆桥', '顺手牵羊', '乐不思蜀', '兵粮寸断'].includes(card.name)
 
   const targetable = (p: Player): boolean => {
     if (awaitingTarget === null || !myTurn || p.id === 0 || !p.alive) return false
     const card = me.hand.find((c) => c.id === awaitingTarget)
     if (!card) return false
     if (isShaLike(card)) return inRange(state, 0, p.id)
-    if (card.name === '顺手牵羊') return distance(state, 0, p.id) === 1
+    if (card.name === '顺手牵羊' || card.name === '兵粮寸断') return distance(state, 0, p.id) === 1
     return true
   }
 

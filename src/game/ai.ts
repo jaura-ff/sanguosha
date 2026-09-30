@@ -115,8 +115,18 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
   const anyTarget = pickTarget(s, p, false, difficulty)
 
   // 2.5 杀（优先真杀，其次闪转化，关羽最后才用武圣转化其他红牌）
+  // 出杀前：若可喝酒（本回合未用过）且目标在范围内，先喝酒强化
   if (rangeTarget !== undefined) {
+    const tgt = s.players[rangeTarget]
     const canSha = p.general.name === '张飞' || p.equip.weapon?.name === '诸葛连弩' || s.shaUsed < 1
+    if (canSha && !s.jiuUsed) {
+      const hasRealSha = p.hand.some((x) => x.name === '杀' || (p.general.name === '赵云' && x.name === '闪'))
+      const jiu = p.hand.find((x) => x.name === '酒')
+      const hurt = p.equip.weapon?.name === '古锭刀' || tgt.hand.length === 0
+      if (jiu && hasRealSha && (difficulty === 'hard' ? hurt : true)) {
+        return { type: 'play', pid: p.id, cardId: jiu.id }
+      }
+    }
     if (canSha) {
       const real = p.hand.find((x) => x.name === '杀')
       if (real) return { type: 'play', pid: p.id, cardId: real.id, targetId: rangeTarget }
@@ -145,6 +155,11 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
     if (le && !t.judge.some((x) => x.name === '乐不思蜀')) {
       return { type: 'play', pid: p.id, cardId: le.id, targetId: anyTarget }
     }
+    // 2.8b 兵粮寸断（距离 1 的敌人，且未中同类）
+    const bing = p.hand.find((x) => x.name === '兵粮寸断')
+    if (bing && distance(s, p.id, anyTarget) === 1 && !t.judge.some((x) => x.name === '兵粮寸断')) {
+      return { type: 'play', pid: p.id, cardId: bing.id, targetId: anyTarget }
+    }
     // 2.9 顺手牵羊（距离 1）
     const shun = p.hand.find((x) => x.name === '顺手牵羊')
     if (shun && distance(s, p.id, anyTarget) === 1 && hasCards(t)) {
@@ -169,6 +184,7 @@ function discardRank(card: { name: string; kind: string }): number {
     case '闪': return 80
     case '无中生有': return 60
     case '杀': return 40
+    case '酒': return 30
     default: return 20
   }
 }

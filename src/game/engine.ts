@@ -3,9 +3,9 @@
 
 export type Suit = '♠' | '♥' | '♣' | '♦'
 export type CardName =
-  | '杀' | '闪' | '桃'
-  | '无中生有' | '决斗' | '南蛮入侵' | '万箭齐发' | '过河拆桥' | '顺手牵羊' | '桃园结义' | '乐不思蜀'
-  | '诸葛连弩' | '青釭剑' | '青龙偃月刀' | '八卦阵' | '的卢' | '赤兔'
+  | '杀' | '闪' | '桃' | '酒'
+  | '无中生有' | '决斗' | '南蛮入侵' | '万箭齐发' | '过河拆桥' | '顺手牵羊' | '桃园结义' | '乐不思蜀' | '兵粮寸断'
+  | '诸葛连弩' | '青釭剑' | '青龙偃月刀' | '古锭刀' | '八卦阵' | '仁王盾' | '白银狮子' | '的卢' | '赤兔'
 
 export type CardKind = 'basic' | 'trick' | 'equip'
 export type EquipSlot = 'weapon' | 'armor' | 'plus' | 'minus'
@@ -43,7 +43,7 @@ export interface Player {
 }
 
 export type Pending =
-  | { kind: 'shan'; source: number; target: number }
+  | { kind: 'shan'; source: number; target: number; damage?: number }
   | { kind: 'juedou'; source: number; target: number }
   | { kind: 'aoe'; card: Card; source: number; queue: number[] }
   | { kind: 'dying'; target: number; queue: number[] }
@@ -59,6 +59,7 @@ export interface GameState {
   pending: Pending | null
   log: string[]
   shaUsed: number
+  jiuUsed: boolean // 本回合是否已使用过【酒】（下一张杀伤害 +1）
   skillUsed: boolean
   winner: string | null
   lastPlayed: { pid: number; card: Card; target?: number } | null
@@ -87,6 +88,7 @@ export function buildDeck(): Card[] {
   for (let i = 0; i < 24; i++) cards.push(mk('杀', suits[i % 4], 'basic'))
   for (let i = 0; i < 12; i++) cards.push(mk('闪', i % 2 ? '♥' : '♦', 'basic'))
   for (let i = 0; i < 6; i++) cards.push(mk('桃', i % 2 ? '♥' : '♦', 'basic'))
+  for (let i = 0; i < 3; i++) cards.push(mk('酒', i === 0 ? '♥' : i === 1 ? '♦' : '♠', 'basic'))
   for (let i = 0; i < 4; i++) cards.push(mk('无中生有', suits[i % 4], 'trick'))
   for (let i = 0; i < 3; i++) cards.push(mk('决斗', suits[i % 4], 'trick'))
   for (let i = 0; i < 2; i++) cards.push(mk('南蛮入侵', '♠', 'trick'))
@@ -95,11 +97,15 @@ export function buildDeck(): Card[] {
   for (let i = 0; i < 3; i++) cards.push(mk('顺手牵羊', suits[i % 4], 'trick'))
   cards.push(mk('桃园结义', '♥', 'trick'))
   for (let i = 0; i < 2; i++) cards.push(mk('乐不思蜀', '♥', 'trick'))
+  for (let i = 0; i < 2; i++) cards.push(mk('兵粮寸断', i % 2 ? '♣' : '♠', 'trick'))
   // 装备
   cards.push(mk('诸葛连弩', '♣', 'equip', 'weapon', 1))
   cards.push(mk('青釭剑', '♠', 'equip', 'weapon', 2))
   cards.push(mk('青龙偃月刀', '♠', 'equip', 'weapon', 3))
+  cards.push(mk('古锭刀', '♠', 'equip', 'weapon', 2))
   cards.push(mk('八卦阵', '♠', 'equip', 'armor'))
+  cards.push(mk('仁王盾', '♣', 'equip', 'armor'))
+  cards.push(mk('白银狮子', '♣', 'equip', 'armor'))
   cards.push(mk('八卦阵', '♣', 'equip', 'armor'))
   cards.push(mk('的卢', '♥', 'equip', 'plus'))
   cards.push(mk('赤兔', '♠', 'equip', 'minus'))
@@ -235,6 +241,10 @@ function checkWin(s: GameState) {
 
 function damage(s: GameState, target: number, n: number, source: number | null) {
   const t = s.players[target]
+  if (t.equip.armor?.name === '白银狮子' && n > 1) {
+    say(s, `${pname(s, target)} 的【白银狮子】将伤害减至 1 点`)
+    n = 1
+  }
   t.hp -= n
   say(s, `${pname(s, target)} 受到 ${n} 点伤害，体力 ${Math.max(t.hp, 0)}/${t.general.maxHp}`)
   if (t.hp <= 0) {
@@ -309,6 +319,7 @@ export function newGame(opts?: { humanGeneral?: General | null }): GameState {
     pending: null,
     log: [],
     shaUsed: 0,
+    jiuUsed: false,
     skillUsed: false,
     winner: null,
     lastPlayed: null,
@@ -323,11 +334,13 @@ function startTurn(s: GameState, pid: number) {
   s.current = pid
   s.phase = 'play'
   s.shaUsed = 0
+  s.jiuUsed = false
   s.skillUsed = false
   const p = s.players[pid]
 
   // 判定阶段：后放置的延时锦囊先判定
   let skipPlay = false
+  let skipDraw = false
   while (p.judge.length > 0) {
     const jc = p.judge.pop()!
     const flip = drawOne(s)
@@ -340,11 +353,23 @@ function startTurn(s: GameState, pid: number) {
         say(s, `${pname(s, pid)} 的【乐不思蜀】判定为 ${flip ? flip.suit : '?'}，跳过出牌阶段！`)
         skipPlay = true
       }
+    } else if (jc.name === '兵粮寸断') {
+      s.discardPile.push(jc)
+      if (flip && flip.suit === '♣') {
+        say(s, `${pname(s, pid)} 的【兵粮寸断】判定为 ${flip.suit}，生效通过`)
+      } else {
+        say(s, `${pname(s, pid)} 的【兵粮寸断】判定为 ${flip ? flip.suit : '?'}，跳过摸牌阶段！`)
+        skipDraw = true
+      }
     }
   }
 
-  drawCards(s, pid, 2)
-  say(s, `—— ${pname(s, pid)} 的回合，摸 2 张牌 ——`)
+  if (!skipDraw) {
+    drawCards(s, pid, 2)
+    say(s, `—— ${pname(s, pid)} 的回合，摸 2 张牌 ——`)
+  } else {
+    say(s, `—— ${pname(s, pid)} 的回合，跳过摸牌 ——`)
+  }
 
   if (skipPlay) {
     if (p.hand.length > p.hp) {
@@ -429,14 +454,40 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
   if (asSha) {
     if (!validTarget(targetId, true)) { say(s, '目标不在攻击范围内'); return s }
     if (!unlimitedSha(p) && s.shaUsed >= 1) { say(s, '每回合只能使用一张【杀】'); return s }
+    const t = s.players[targetId!]
+    const ignoreArmor = p.equip.weapon?.name === '青釭剑'
+    // 仁王盾：黑色【杀】无效（青釭剑无视防具）
+    if (!ignoreArmor && t.equip.armor?.name === '仁王盾' && card.color === 'black') {
+      use(card, targetId)
+      say(s, `${pname(s, targetId!)} 的【仁王盾】免疫了黑色【杀】`)
+      return s
+    }
+    // 伤害结算：酒加成、古锭刀对空手牌目标加成
+    let dmg = 1
+    if (s.jiuUsed) {
+      s.jiuUsed = false
+      dmg++
+      say(s, `${pname(s, pid)} 的【酒】让本张【杀】伤害 +1`)
+    }
+    if (p.equip.weapon?.name === '古锭刀' && t.hand.length === 0) {
+      dmg++
+      say(s, `${pname(s, pid)} 的【古锭刀】对空手牌目标伤害 +1`)
+    }
     s.shaUsed++
     use(card, targetId)
     say(s, `${pname(s, pid)} 对 ${pname(s, targetId!)} 使用【杀】`)
-    s.pending = { kind: 'shan', source: pid, target: targetId! }
+    s.pending = { kind: 'shan', source: pid, target: targetId!, damage: dmg }
     return s
   }
 
   switch (card.name) {
+    case '酒': {
+      if (s.jiuUsed) { say(s, '本回合已使用过【酒】'); return s }
+      use(card)
+      s.jiuUsed = true
+      say(s, `${pname(s, pid)} 使用【酒】，下一张【杀】伤害 +1`)
+      return s
+    }
     case '桃': {
       if (p.hp >= p.general.maxHp) { say(s, '体力已满，无法使用【桃】'); return s }
       use(card, pid)
@@ -506,6 +557,15 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
       s.players[targetId!].judge.push(card)
       s.lastPlayed = { pid, card, target: targetId }
       say(s, `${pname(s, pid)} 对 ${pname(s, targetId!)} 使用【乐不思蜀】`)
+      jizhi(s, pid)
+      return s
+    }
+    case '兵粮寸断': {
+      if (!validTarget(targetId, false, 1)) { say(s, '【兵粮寸断】只能对距离 1 的角色使用'); return s }
+      removeCard(p, card.id)
+      s.players[targetId!].judge.push(card)
+      s.lastPlayed = { pid, card, target: targetId }
+      say(s, `${pname(s, pid)} 对 ${pname(s, targetId!)} 使用【兵粮寸断】`)
       jizhi(s, pid)
       return s
     }
@@ -635,7 +695,7 @@ function doRespond(s: GameState, pid: number, cardId: number | null): GameState 
     }
     say(s, `${pname(s, pid)} 没有出【闪】`)
     s.pending = null
-    damage(s, pd.target, 1, pd.source)
+    damage(s, pd.target, pd.damage ?? 1, pd.source)
     return s
   }
 
