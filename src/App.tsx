@@ -499,8 +499,12 @@ export default function App() {
   }, [winSize])
   const logRef = useRef<HTMLDivElement>(null)
   const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cardTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => () => { if (tipTimer.current) clearTimeout(tipTimer.current) }, [])
+  useEffect(() => () => {
+    if (tipTimer.current) clearTimeout(tipTimer.current)
+    if (cardTipTimer.current) clearTimeout(cardTipTimer.current)
+  }, [])
 
   const dispatch = (a: Action) => {
     setState((prev) => apply(prev, a))
@@ -515,7 +519,9 @@ export default function App() {
     setGuhuo(false)
     setRendeMode(false)
     if (tipTimer.current) clearTimeout(tipTimer.current)
+    if (cardTipTimer.current) clearTimeout(cardTipTimer.current)
     setHoverTip(null)
+    setCardTip(null)
   }
 
   useEffect(() => {
@@ -562,6 +568,7 @@ export default function App() {
     setGuhuo(false)
     setRendeMode(false)
     setHoverTip(null)
+    setCardTip(null)
   }
 
   const startGame = () => {
@@ -689,6 +696,9 @@ export default function App() {
   }
 
   const onHandClick = (card: Card) => {
+    // 点击选牌/出牌后立即收起卡牌说明（触屏上 hover 弹框会残留）
+    if (cardTipTimer.current) clearTimeout(cardTipTimer.current)
+    setCardTip(null)
     if (myPending) {
       if (usableForPending(card)) dispatch({ type: 'respond', pid: 0, cardId: card.id })
       else setHint('这张牌不能用于当前响应')
@@ -783,8 +793,14 @@ export default function App() {
     const x = Math.max(8, Math.min(e.clientX + 14, window.innerWidth - tipW - 8))
     const y = Math.max(8, e.clientY - 10)
     setCardTip({ x, y, name: card.name })
+    // 兜底：触屏无 mouseleave，即使离开事件丢失也会在 3 秒后自动收起
+    if (cardTipTimer.current) clearTimeout(cardTipTimer.current)
+    cardTipTimer.current = setTimeout(() => setCardTip(null), 3000)
   }
-  const onCardLeave = () => setCardTip(null)
+  const onCardLeave = () => {
+    if (cardTipTimer.current) clearTimeout(cardTipTimer.current)
+    setCardTip(null)
+  }
 
   // 触屏没有 hover，改为轻点角色弹出说明，2.6 秒后自动收起
   const onPanelTap = (e: React.PointerEvent, p: Player) => {
