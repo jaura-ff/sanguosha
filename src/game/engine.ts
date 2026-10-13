@@ -18,6 +18,7 @@ export interface Card {
   kind: CardKind
   slot?: EquipSlot
   range?: number // 武器攻击范围
+  physicalCard?: Card // 转化延时锦囊的原始实体牌，离开判定区后恢复
 }
 
 export type Identity = '主公' | '忠臣' | '反贼'
@@ -44,10 +45,10 @@ export interface Player {
 }
 
 export type Pending =
-  | { kind: 'shan'; source: number; target: number; damage?: number; dodged?: boolean }
+  | { kind: 'shan'; source: number; target: number; damage?: number; dodged?: boolean; baguaUsed?: boolean; ignoreArmor?: boolean }
   | { kind: 'juedou'; source: number; target: number }
   | { kind: 'aoe'; card: Card; source: number; queue: number[] }
-  | { kind: 'dying'; target: number; queue: number[] }
+  | { kind: 'dying'; target: number; queue: number[]; source?: number | null; resume?: Pending | null; resumeTurn?: { pid: number; skipPlay: boolean; skipDraw: boolean } }
 
 export type Phase = 'play' | 'discard' | 'gameover'
 
@@ -197,9 +198,17 @@ export function canBeShan(p: Player, card: Card): boolean {
 // 是否可当【桃】使用：桃本体，华佗红牌（急救），或于吉任意牌（蛊惑）
 export function canBeTao(p: Player, card: Card): boolean {
   if (card.name === '桃') return true
-  if (p.general.name === '华佗' && card.color === 'red' && card.kind !== 'equip') return true
-  if (p.general.name === '于吉' && card.kind !== 'equip') return true
+  if (p.general.name === '华佗' && card.color === 'red') return true
+  if (p.general.name === '于吉') return true
   return false
+}
+
+export function canBeChai(p: Player, card: Card): boolean {
+  return p.general.name === '甘宁' && card.color === 'black'
+}
+
+export function canBeLe(p: Player, card: Card): boolean {
+  return p.general.name === '大乔' && card.suit === '♦'
 }
 
 // 从牌堆取一张牌；牌堆耗尽时自动把弃牌堆洗回牌堆（保证判定、摸牌、八卦阵等取牌永不落空）。
@@ -214,7 +223,8 @@ function drawOne(s: GameState): Card | null {
     }
     say(s, '牌堆耗尽，弃牌堆洗入牌堆')
   }
-  return s.deck.pop() ?? null
+  const card = s.deck.pop()
+  return card?.physicalCard ?? card ?? null
 }
 
 function drawCards(s: GameState, pid: number, n: number) {
@@ -275,7 +285,7 @@ function shaLimit(p: Player): number {
 }
 
 // 手牌上限：默认等于体力，周瑜【英姿】+1
-function handLimit(p: Player): number {
+export function handLimit(p: Player): number {
   return p.hp + (p.general.name === '周瑜' ? 1 : 0)
 }
 
@@ -298,6 +308,18 @@ function checkWin(s: GameState) {
 
 function damage(s: GameState, target: number, n: number, source: number | null) {
   const t = s.players[target]
+  if (!t.alive || n <= 0) return
+  // 转移必须发生在扣血和濒死之前；保留原伤害值。
+  if (t.general.name === '小乔' && source !== null && source !== target && s.players[source].alive) {
+    const hongtao = t.hand.find((cd) => cd.suit === '♥')
+    if (hongtao) {
+      removeCard(t, hongtao.id)
+      s.discardPile.push(hongtao)
+      say(s, `${pname(s, target)} 发动【天香】弃【${hongtao.name}】，将 ${n} 点伤害转移给 ${pname(s, source)}`)
+      damage(s, source, n, target)
+      return
+    }
+  }
   if (t.equip.armor?.name === '白银狮子' && n > 1) {
     say(s, `${pname(s, target)} 的【白银狮子】将伤害减至 1 点`)
     n = 1
@@ -318,7 +340,7 @@ function damage(s: GameState, target: number, n: number, source: number | null) 
       if (s.players[i].alive) queue.push(i)
       i = (i + 1) % s.players.length
     }
-    s.pending = { kind: 'dying', target, queue }
+    s.pending = { kind: 'dying', target, queue, source, resume: s.pending }
     say(s, `${pname(s, target)} 进入濒死状态，等待【桃】救援`)
     return
   }
@@ -369,16 +391,6 @@ function damage(s: GameState, target: number, n: number, source: number | null) 
       } else {
         say(s, `${pname(s, target)} 发动【刚烈】判定 ${flip.suit}（红桃），失效`)
       }
-    }
-  }
-  // 小乔【天香】：受到伤害时弃 1 张红桃牌，将伤害转移给伤害来源
-  if (t.general.name === '小乔' && source !== null && s.players[source].alive && source !== target) {
-    const hongtao = t.hand.find((cd) => cd.suit === '♥')
-    if (hongtao) {
-      removeCard(t, hongtao.id)
-      s.discardPile.push(hongtao)
-      say(s, `${pname(s, target)} 发动【天香】弃【${hongtao.name}】，将伤害转移给 ${pname(s, source)}`)
-      damage(s, source, 1, target)
     }
   }
   void source
@@ -467,11 +479,13 @@ function startTurn(s: GameState, pid: number) {
   s.jiuUsed = false
   s.luoyi = false
   s.skillUsed = false
+  continueStartTurn(s, pid)
+}
+
+function continueStartTurn(s: GameState, pid: number, skipPlay = false, skipDraw = false) {
   const p = s.players[pid]
 
   // 判定阶段：后放置的延时锦囊先判定
-  let skipPlay = false
-  let skipDraw = false
   while (p.judge.length > 0) {
     const jc = p.judge.pop()!
     const flip = drawOne(s)
@@ -497,7 +511,10 @@ function startTurn(s: GameState, pid: number) {
         s.discardPile.push(jc)
         say(s, `${pname(s, pid)} 的【闪电】判定为 ${flip.suit}，遭雷击受到 2 点伤害！`)
         damage(s, pid, 2, null)
-        if (s.pending) return // 雷击触发濒死，中断判定与摸牌
+        if (s.pending?.kind === 'dying') {
+          s.pending.resumeTurn = { pid, skipPlay, skipDraw }
+          return
+        }
       } else {
         say(s, `${pname(s, pid)} 的【闪电】判定为 ${flip ? flip.suit : '?'}，转移给下家`)
         s.players[nextAlive(s, pid)].judge.push(jc)
@@ -585,6 +602,14 @@ export type Action =
   | { type: 'bagua'; pid: number }
 
 export function apply(prev: GameState, a: Action): GameState {
+  const s = applyAction(prev, a)
+  if (s.phase === 'gameover') s.pending = null
+  // 回合中的反伤可能杀死当前角色；结算完成后从死者下家继续。
+  if (!s.winner && !s.pending && !s.players[s.current].alive) endTurn(s, s.current)
+  return s
+}
+
+function applyAction(prev: GameState, a: Action): GameState {
   const s = clone(prev)
   switch (a.type) {
     case 'play': return doPlay(s, a.pid, a.cardId, a.targetId, a.asSha, a.asTao, a.asChai, a.asLe)
@@ -633,6 +658,36 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     }
   }
 
+  // 显式技能转化先于原牌效果（包括杀、火杀和装备手牌）。
+  if (asTaoFlag) {
+    if (!canBeTao(p, card) || p.hp >= p.general.maxHp) { say(s, '此牌不能当【桃】使用或体力已满'); return s }
+    use(card, pid)
+    p.hp++
+    say(s, `${pname(s, pid)} 将【${card.name}】当【桃】使用，回复 1 点体力`)
+    return s
+  }
+  if (asChaiFlag) {
+    if (!canBeChai(p, card) || !validTarget(targetId, false)) return s
+    const t = s.players[targetId]
+    const pool = targetCards(t)
+    if (!pool.length) { say(s, '对方没有可拆的牌'); return s }
+    use(card, targetId)
+    const got = stealRandom(s, t, pool)
+    s.discardPile.push(got)
+    say(s, `${pname(s, pid)} 发动【奇袭】，将【${card.name}】当【过河拆桥】，拆掉【${got.name}】`)
+    return s
+  }
+  if (asLeFlag) {
+    if (!canBeLe(p, card) || !validTarget(targetId, false)) return s
+    if (s.players[targetId].judge.some((cd) => cd.name === '乐不思蜀')) { say(s, '判定区已有【乐不思蜀】'); return s }
+    removeCard(p, card.id)
+    const converted: Card = { ...card, name: '乐不思蜀', kind: 'trick', slot: undefined, range: undefined, physicalCard: card }
+    s.players[targetId].judge.push(converted)
+    s.lastPlayed = { pid, card: converted, target: targetId }
+    say(s, `${pname(s, pid)} 发动【国色】，将【${card.name}】当【乐不思蜀】使用`)
+    return s
+  }
+
   // 装备牌
   if (card.kind === 'equip' && card.slot) {
     removeCard(p, card.id)
@@ -655,41 +710,6 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     card.name === '杀' || card.name === '火杀' ||
     ((p.general.name === '赵云' || p.general.name === '关羽') && card.name === '闪') ||
     (p.general.name === '关羽' && card.color === 'red' && !!asShaFlag)
-
-  // 华佗【急救】/于吉【蛊惑】：非桃当桃（需显式开启，主动给自己回血；濒死救人走响应）
-  const asTao = canBeTao(p, card) && card.name !== '桃' && !!asTaoFlag
-  if (asTao && !asSha) {
-    if (p.hp >= p.general.maxHp) { say(s, '体力已满，无法使用【桃】'); return s }
-    use(card, pid)
-    p.hp++
-    say(s, `${pname(s, pid)} 发动【${p.general.name === '华佗' ? '急救' : '蛊惑'}】，将【${card.name}】当【桃】使用，回复 1 点体力`)
-    return s
-  }
-
-  // 甘宁【奇袭】：黑色手牌当【过河拆桥】（需显式开启）
-  if (p.general.name === '甘宁' && card.color === 'black' && card.kind !== 'equip' && card.name !== '杀' && card.name !== '火杀' && !!asChaiFlag) {
-    if (!validTarget(targetId, false)) return s
-    const t2 = s.players[targetId!]
-    const pool2 = targetCards(t2)
-    if (pool2.length === 0) { say(s, '对方没有可拆的牌'); return s }
-    use(card, targetId)
-    const got2 = stealRandom(s, t2, pool2)
-    s.discardPile.push(got2)
-    say(s, `${pname(s, pid)} 发动【奇袭】，将【${card.name}】当【过河拆桥】，拆掉【${got2.name}】`)
-    jizhi(s, pid)
-    return s
-  }
-
-  // 大乔【国色】：方块手牌当【乐不思蜀】（需显式开启）
-  if (p.general.name === '大乔' && card.suit === '♦' && card.kind !== 'equip' && !!asLeFlag) {
-    if (!validTarget(targetId, false)) return s
-    removeCard(p, card.id)
-    s.players[targetId!].judge.push(card)
-    s.lastPlayed = { pid, card, target: targetId }
-    say(s, `${pname(s, pid)} 发动【国色】，将【${card.name}】当【乐不思蜀】使用`)
-    jizhi(s, pid)
-    return s
-  }
 
   if (asSha) {
     if (!validTarget(targetId, true)) { say(s, '目标不在攻击范围内'); return s }
@@ -742,7 +762,7 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
       damage(s, targetId!, dmg, pid)
       return s
     }
-    s.pending = { kind: 'shan', source: pid, target: targetId!, damage: dmg, dodged: false }
+    s.pending = { kind: 'shan', source: pid, target: targetId!, damage: dmg, dodged: false, ignoreArmor }
     return s
   }
 
@@ -828,6 +848,7 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     }
     case '乐不思蜀': {
       if (!validTarget(targetId, false)) return s
+      if (s.players[targetId].judge.some((cd) => cd.name === '乐不思蜀')) return s
       removeCard(p, card.id)
       s.players[targetId!].judge.push(card)
       s.lastPlayed = { pid, card, target: targetId }
@@ -846,6 +867,7 @@ function doPlay(s: GameState, pid: number, cardId: number, targetId?: number, as
     }
     case '兵粮寸断': {
       if (!validTarget(targetId, false, 1)) { say(s, '【兵粮寸断】只能对距离 1 的角色使用'); return s }
+      if (s.players[targetId].judge.some((cd) => cd.name === '兵粮寸断')) return s
       removeCard(p, card.id)
       s.players[targetId!].judge.push(card)
       s.lastPlayed = { pid, card, target: targetId }
@@ -883,7 +905,7 @@ function stealRandom(
     t.judge = t.judge.filter((cd) => cd.id !== pick.card.id)
   }
   void s
-  return pick.card
+  return pick.card.physicalCard ?? pick.card
 }
 
 function jizhi(s: GameState, pid: number) {
@@ -999,15 +1021,61 @@ function doBagua(s: GameState, pid: number): GameState {
   const pd = s.pending
   if (!pd || pd.kind !== 'shan' || pd.target !== pid) return s
   const p = s.players[pid]
-  if (p.equip.armor?.name !== '八卦阵') return s
+  if (p.equip.armor?.name !== '八卦阵' || pd.baguaUsed || pd.ignoreArmor) return s
   const flip = drawOne(s)
   if (!flip) return s
   s.discardPile.push(flip)
   say(s, `${pname(s, pid)} 发动【八卦阵】判定：${flip.suit}${flip.color === 'red' ? '，视为打出【闪】！' : '，判定失败'}`)
   if (flip.color === 'red') {
-    s.pending = null
+    resolveShan(s, pid, pd)
+  } else {
+    s.pending = { ...pd, baguaUsed: true }
   }
   return s
+}
+
+function resolveShan(s: GameState, pid: number, pd: Extract<Pending, { kind: 'shan' }>) {
+  const needsSecond = s.players[pd.source].general.name === '吕布' && !pd.dodged
+  s.pending = needsSecond ? { ...pd, dodged: true, baguaUsed: false } : null
+  say(s, needsSecond ? `${pname(s, pid)} 打出【闪】；吕布【无双】还需再出一张【闪】` : `${pname(s, pid)} 打出【闪】抵消了【杀】`)
+  if (s.players[pid].general.name === '张角' && s.players[pd.source].alive) {
+    say(s, `${pname(s, pid)} 发动【雷击】，对 ${pname(s, pd.source)} 造成 1 点伤害`)
+    damage(s, pd.source, 1, pid)
+  }
+  const src = s.players[pd.source]
+  if (!needsSecond && src.equip.weapon?.name === '青龙偃月刀' && s.shaUsed > 0) {
+    s.shaUsed--
+    say(s, `${pname(s, pd.source)} 的【青龙偃月刀】生效，可再出【杀】`)
+  }
+}
+
+function finishDying(s: GameState, pd: Extract<Pending, { kind: 'dying' }>, survived: boolean) {
+  s.pending = pd.resume ?? null
+  if (survived) {
+    say(s, `${pname(s, pd.target)} 脱离濒死`)
+  } else {
+    const identity = s.players[pd.target].identity
+    die(s, pd.target)
+    if (identity === '反贼' && !s.winner && pd.source != null && s.players[pd.source].alive) {
+      drawCards(s, pd.source, 3)
+      say(s, `${pname(s, pd.source)} 杀死反贼，摸 3 张牌`)
+    }
+  }
+  // 清除已阵亡的响应者，但保留其他人的结算。
+  let next = s.pending
+  while (next) {
+    if (next.kind === 'dying' && !s.players[next.target].alive) { next = next.resume ?? null; continue }
+    if (next.kind === 'aoe' || next.kind === 'dying') {
+      next = { ...next, queue: next.queue.filter((id) => s.players[id].alive) }
+      if (next.queue.length === 0 && next.kind === 'aoe') next = null
+    } else if (!s.players[next.target].alive || !s.players[next.source].alive) next = null
+    break
+  }
+  s.pending = s.winner ? null : next
+  if (!s.winner && survived && pd.resumeTurn) {
+    const { pid, skipPlay, skipDraw } = pd.resumeTurn
+    continueStartTurn(s, pid, skipPlay, skipDraw)
+  }
 }
 
 // ---------- 响应 ----------
@@ -1024,25 +1092,7 @@ function doRespond(s: GameState, pid: number, cardId: number | null): GameState 
       if (!card || !canBeShan(p, card)) return s
       removeCard(p, cardId)
       s.discardPile.push(card)
-      // 吕布【无双】：需要连续两张闪；第一张闪后仍要继续闪
-      if (pd.source !== null && s.players[pd.source].general.name === '吕布' && !pd.dodged) {
-        say(s, `${pname(s, pid)} 打出【闪】；吕布【无双】还需再出一张【闪】`)
-        s.pending = { ...pd, dodged: true }
-        return s
-      }
-      say(s, `${pname(s, pid)} 打出【闪】抵消了【杀】`)
-      s.pending = null
-      // 张角【雷击】：打出【闪】后对【杀】来源造成 1 点伤害
-      if (p.general.name === '张角' && pd.source !== null && s.players[pd.source].alive) {
-        say(s, `${pname(s, pid)} 发动【雷击】，对 ${pname(s, pd.source)} 造成 1 点伤害`)
-        damage(s, pd.source, 1, pid)
-      }
-      // 青龙偃月刀：杀被闪后可再出一张
-      const src = s.players[pd.source]
-      if (src.equip.weapon?.name === '青龙偃月刀' && s.shaUsed > 0) {
-        s.shaUsed--
-        say(s, `${pname(s, pd.source)} 的【青龙偃月刀】生效，可再出【杀】`)
-      }
+      resolveShan(s, pid, pd)
       return s
     }
     say(s, `${pname(s, pid)} 没有出【闪】`)
@@ -1103,21 +1153,13 @@ function doRespond(s: GameState, pid: number, cardId: number | null): GameState 
       const skillName = p.general.name === '华佗' ? '急救' : p.general.name === '于吉' ? '蛊惑' : ''
       say(s, `${pname(s, pid)} ${isConverted ? `发动【${skillName}】将【${card.name}】当【桃】` : '使用【桃】'}，${pname(s, pd.target)} 体力回复至 ${t.hp}`)
       if (t.hp > 0) {
-        s.pending = null
-        say(s, `${pname(s, pd.target)} 脱离濒死`)
+        finishDying(s, pd, true)
       }
       return s
     }
     const q = pd.queue.slice(1)
     if (q.length === 0) {
-      const target = pd.target
-      const identity = s.players[target].identity
-      s.pending = null
-      die(s, target)
-      if (identity === '反贼' && s.phase !== 'gameover' && s.players[s.current].alive) {
-        drawCards(s, s.current, 3)
-        say(s, `${pname(s, s.current)} 杀死反贼，摸 3 张牌`)
-      }
+      finishDying(s, pd, false)
       return s
     }
     s.pending = { ...pd, queue: q }
@@ -1126,3 +1168,4 @@ function doRespond(s: GameState, pid: number, cardId: number | null): GameState 
 
   return s
 }
+
