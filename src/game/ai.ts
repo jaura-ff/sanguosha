@@ -1,5 +1,5 @@
 // AI 决策 v3：适配装备、距离、新卡牌与全部武将技能
-import { canBeSha, canBeShan, canBeTao, distance, inRange } from './engine'
+import { canBeSha, canBeShan, canBeTao, canBeChai, canBeLe, handLimit, distance, inRange } from './engine'
 import type { Action, Card, GameState, Player } from './engine'
 
 export type Difficulty = 'easy' | 'normal' | 'hard'
@@ -48,11 +48,13 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
       const shanCards = p.hand.filter((cd) => canBeShan(p, cd))
       const source = s.players[pd.source]
       // 吕布【无双】：需连续两张【闪】；不足且无八卦阵时，省下这一张【闪】（反正要掉血）
-      if (source.general.name === '吕布' && shanCards.length < 2 && p.equip.armor?.name !== '八卦阵') {
+      const needed = source.general.name === '吕布' && !pd.dodged ? 2 : 1
+      const canBagua = p.equip.armor?.name === '八卦阵' && !pd.baguaUsed && !pd.ignoreArmor
+      if (shanCards.length < needed && !canBagua) {
         return { type: 'respond', pid, cardId: null }
       }
       if (shanCards.length > 0) return { type: 'respond', pid, cardId: shanCards[0].id }
-      if (p.equip.armor?.name === '八卦阵') return { type: 'bagua', pid }
+      if (canBagua) return { type: 'bagua', pid }
       return { type: 'respond', pid, cardId: null }
     }
     if (pd.kind === 'juedou') {
@@ -95,7 +97,7 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
   if (!p || p.isHuman || !p.alive) return null
 
   if (s.phase === 'discard') {
-    const limit = p.hp + (p.general.name === '周瑜' ? 1 : 0)
+    const limit = handLimit(p)
     const need = p.hand.length - limit
     if (need <= 0) return { type: 'discard', pid: p.id, cardIds: [] }
     const sorted = [...p.hand].sort((a, b) => discardRank(a, p) - discardRank(b, p))
@@ -162,7 +164,7 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
   // 出杀前：若可喝酒（本回合未用过）且目标在范围内，先喝酒强化
   if (rangeTarget !== undefined) {
     const tgt = s.players[rangeTarget]
-    const canSha = p.general.name === '张飞' || p.equip.weapon?.name === '诸葛连弩' || s.shaUsed < 1
+    const canSha = p.general.name === '张飞' || p.equip.weapon?.name === '诸葛连弩' || s.shaUsed < (p.general.name === '夏侯渊' ? 2 : 1)
     if (canSha && !s.jiuUsed) {
       const hasRealSha = p.hand.some((x) => x.name === '杀' || (p.general.name === '赵云' && x.name === '闪'))
       const jiu = p.hand.find((x) => x.name === '酒')
@@ -221,12 +223,12 @@ export function aiAction(s: GameState, difficulty: Difficulty = 'normal'): Actio
     if (chai && hasCards(t)) return { type: 'play', pid: p.id, cardId: chai.id, targetId: anyTarget }
     // 2.10b 甘宁【奇袭】：黑色手牌当过河拆桥（优先拆有牌的敌人）
     if (p.general.name === '甘宁' && hasCards(t)) {
-      const black = p.hand.find((x) => x.color === 'black' && x.kind !== 'equip' && x.name !== '杀' && x.name !== '火杀')
+      const black = p.hand.find((x) => canBeChai(p, x))
       if (black) return { type: 'play', pid: p.id, cardId: black.id, targetId: anyTarget, asChai: true }
     }
     // 2.10c 大乔【国色】：方块手牌当乐不思蜀
     if (p.general.name === '大乔' && !t.judge.some((x) => x.name === '乐不思蜀')) {
-      const diamond = p.hand.find((x) => x.suit === '♦' && x.kind !== 'equip')
+      const diamond = p.hand.find((x) => canBeLe(p, x))
       if (diamond) return { type: 'play', pid: p.id, cardId: diamond.id, targetId: anyTarget, asLe: true }
     }
     // 2.11 桃园结义（自己或主公残血时）
@@ -263,3 +265,4 @@ function discardRank(card: Card, p: Player): number {
     default: return 20
   }
 }
+

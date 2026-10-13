@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  apply, attackRange, canBeSha, canBeShan, canBeTao, distance, inRange, newGame, pname, GENERALS,
+  apply, attackRange, canBeSha, canBeShan, canBeTao, canBeChai, canBeLe, handLimit, distance, inRange, newGame, pname, GENERALS,
 } from './game/engine'
 import type { Action, Card, CardName, GameState, General, Player } from './game/engine'
 import { aiAction } from './game/ai'
@@ -546,7 +546,7 @@ export default function App() {
   const me = state.players[0]
   const myTurn = state.current === 0 && state.phase === 'play' && !state.pending && !state.winner
   const discarding = state.current === 0 && state.phase === 'discard' && !state.winner
-  const needDiscard = Math.max(me.hand.length - me.hp, 0)
+  const needDiscard = Math.max(me.hand.length - handLimit(me), 0)
 
   const myPending = useMemo(() => {
     const pd = state.pending
@@ -675,21 +675,23 @@ export default function App() {
 
   // 华佗【急救】/于吉【蛊惑】：开启后红色牌（华佗）或任意牌（于吉）可当【桃】使用
   const isJijiuCard = (card: Card): boolean =>
-    (me.general.name === '华佗' && jijiu && card.color === 'red' && card.kind !== 'equip') ||
-    (me.general.name === '于吉' && guhuo && card.kind !== 'equip')
+    (me.general.name === '华佗' && jijiu && canBeTao(me, card)) ||
+    (me.general.name === '于吉' && guhuo && canBeTao(me, card))
 
   // 甘宁【奇袭】：黑牌当过河拆桥
   const isQixiCard = (card: Card): boolean =>
-    me.general.name === '甘宁' && qixi && card.color === 'black' && card.kind !== 'equip' && card.name !== '杀' && card.name !== '火杀'
+    qixi && canBeChai(me, card)
 
   // 大乔【国色】：方块当乐不思蜀
   const isGuoseCard = (card: Card): boolean =>
-    me.general.name === '大乔' && guose && card.suit === '♦' && card.kind !== 'equip'
+    guose && canBeLe(me, card)
 
   const targetable = (p: Player): boolean => {
     if (awaitingTarget === null || !myTurn || p.id === 0 || !p.alive) return false
     const card = me.hand.find((c) => c.id === awaitingTarget)
     if (!card) return false
+    if (isQixiCard(card)) return p.hand.length > 0 || Object.keys(p.equip).length > 0 || p.judge.length > 0
+    if (isGuoseCard(card)) return !p.judge.some((cd) => cd.name === '乐不思蜀')
     if (isShaLike(card)) return inRange(state, 0, p.id)
     if (card.name === '顺手牵羊' || card.name === '兵粮寸断') return distance(state, 0, p.id) === 1
     return true
@@ -761,7 +763,7 @@ export default function App() {
   }
 
   const awaitingCard = awaitingTarget !== null ? me.hand.find((c) => c.id === awaitingTarget) : null
-  const canBagua = myPending?.kind === 'shan' && me.equip.armor?.name === '八卦阵'
+  const canBagua = myPending?.kind === 'shan' && me.equip.armor?.name === '八卦阵' && !myPending.baguaUsed && !myPending.ignoreArmor
 
   const showTip = (cx: number, cy: number, p: Player, autoHide: boolean) => {
     const identityShown = p.identityRevealed || p.isHuman || state.phase === 'gameover'
@@ -1214,3 +1216,4 @@ export default function App() {
     </div>
   )
 }
+
